@@ -1,112 +1,350 @@
-# Ashiyana Buy Sell Rent — Backend
+# 🏡 Ashiyana - Premium Goa Real Estate Platform
 
-AI-powered real estate broker platform built for a Goa-based broker.
-Live project — actively used by the business.
+> A modern full-stack real estate platform built for buying, selling, and renting premium properties across Goa, India.
 
-## Tech Stack
-- **Backend**: FastAPI + PostgreSQL (PostGIS) + SQLAlchemy (async)
-- **Auth**: JWT + Google OAuth
-- **Media**: Cloudinary
-- **Maps**: PostGIS + Leaflet
-- **AI**: scikit-learn price estimator (broker-only)
-- **Integrations**: Twilio WhatsApp bot
-- **Deployment**: Railway + Docker
+![Python](https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge&logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql)
+![PostGIS](https://img.shields.io/badge/PostGIS-Spatial-green?style=for-the-badge)
+![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)
+![Vite](https://img.shields.io/badge/Vite-Frontend-646CFF?style=for-the-badge&logo=vite)
+![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=for-the-badge&logo=docker)
+![License](https://img.shields.io/badge/License-MIT-success?style=for-the-badge)
 
-## Project Structure
+---
+
+# 📖 About
+
+Ashiyana is a modern real estate platform designed specifically for the Goa property market.
+
+Unlike generic listing websites, Ashiyana focuses on premium residential and commercial properties while providing secure broker management, NRI-friendly listings, property intelligence, and map-based discovery.
+
+The platform is being developed as a production-ready application with scalability, security, and modern architecture in mind.
+
+---
+
+# ✨ Features
+
+### 🏠 Property Listings
+
+- Buy, Sell & Rent properties
+- Residential & Commercial listings
+- Advanced property filters
+- Featured properties
+- Property details page
+- Property status management
+
+---
+
+### 👤 Authentication
+
+- JWT Authentication
+- Google OAuth Login
+- Refresh Tokens
+- Role-based Authorization
+
+Roles:
+
+- 👑 Broker
+- 👤 Registered User
+- 🌍 Public Visitor
+
+---
+
+### ❤️ User Features
+
+- Save/Favorite Properties
+- Property Search
+- Property Filters
+- Secure User Accounts
+- NRI Mode
+
+---
+
+### 👑 Broker Features
+
+- Add Property
+- Edit Property
+- Delete Property
+- Manage Listings
+- View Property Watchers
+- Manage Enquiries
+
+---
+
+### 🌍 Goa-specific Intelligence
+
+- Goa Region Classification
+- Beach Distance
+- Airport Distance
+- Tourist Density
+- Connectivity Score
+- NRI Eligibility
+- FEMA Compliance
+- Short-term Rental Potential
+
+---
+
+### 🗺️ Location Features
+
+- Approximate Property Map
+- Exact Broker-only Coordinates
+- PostGIS Spatial Database
+- Secure Address Handling
+
+---
+
+### 🔒 Security
+
+- Password Hashing
+- JWT Authentication
+- Protected Routes
+- Broker-only APIs
+- Hidden Exact Locations
+- Role-based Permissions
+
+---
+
+# 🛠 Tech Stack
+
+## Backend
+
+- FastAPI
+- SQLAlchemy
+- Alembic
+- PostgreSQL
+- PostGIS
+- GeoAlchemy2
+- Pydantic v2
+- JWT
+- OAuth2
+- Docker
+
+## Frontend
+
+- React
+- TypeScript
+- Vite
+
+## Database
+
+- PostgreSQL
+- PostGIS
+
+## DevOps
+
+- Docker
+- Docker Compose
+- Alembic Migrations
+
+---
+
+# 📂 Project Structure
+
 ```
 ashiyana/
+│
 ├── app/
-│   ├── api/routes/       # Route handlers per feature
-│   ├── core/             # Config, security, dependencies
-│   ├── db/               # Database engine, migrations
-│   ├── models/           # SQLAlchemy models (7 tables)
-│   ├── schemas/          # Pydantic request/response schemas
-│   ├── services/         # Business logic layer
-│   └── main.py           # FastAPI app entry point
+│   ├── api/
+│   ├── core/
+│   ├── db/
+│   ├── models/
+│   ├── schemas/
+│   ├── services/
+│   └── main.py
+│
+├── frontend/
+│
 ├── tests/
+│
 ├── docker-compose.yml
-├── Dockerfile
-└── requirements.txt
+├── requirements.txt
+└── README.md
 ```
 
-## Setup
+---
 
-### 1. Clone and install
+# 🗄 Database
+
+Current entities:
+
+- Users
+- Properties
+- Property Images
+- Property Documents
+- Saved Properties
+- Enquiries
+- Seller Submissions
+- Valuations
+
+---
+
+# 🔌 API Highlights
+
+Authentication
+
+```
+POST /auth/register
+POST /auth/login
+POST /auth/google
+POST /auth/refresh
+GET  /auth/me
+```
+
+Properties
+
+```
+GET    /properties
+GET    /properties/{id}
+POST   /properties
+PATCH  /properties/{id}
+DELETE /properties/{id}
+```
+
+Saved Properties
+
+```
+POST   /properties/{id}/save
+DELETE /properties/{id}/save
+GET    /properties/saved/mine
+```
+
+---
+
+# 🚀 Getting Started
+
+## Clone Repository
+
 ```bash
-git clone https://github.com/yourusername/ashiyana.git
-cd ashiyana
-python -m venv venv && source venv/bin/activate
+git clone https://github.com/sanashk19/ashiyana-real-estate.git
+```
+
+```
+cd ashiyana-real-estate
+```
+
+---
+
+## Backend
+
+Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Environment
+Run Docker
+
 ```bash
-cp .env.example .env
-# Fill in your values
+docker compose up --build
 ```
 
-### 3. Run with Docker (recommended)
-```bash
-docker-compose up --build
+Backend:
+
+```
+http://localhost:8000
 ```
 
-### 4. Run locally
-```bash
-# Start PostgreSQL separately, then:
-alembic upgrade head
-uvicorn app.main:app --reload
+Swagger Docs:
+
+```
+http://localhost:8000/docs
 ```
 
-### 5. Run migrations
+---
+
+## Frontend
+
 ```bash
-alembic upgrade head
+cd frontend
 ```
 
-## API Docs
-Visit `http://localhost:8000/docs` (development only)
-
-## Key Design Decisions
-- **No bypass**: Property addresses and owner contacts are never exposed in public API responses
-- **Broker-only AI**: Price estimator endpoint protected by `require_broker` dependency
-- **Approximate coordinates only**: Public map markers use `approx_lat/lng`, never `exact_location`
-- **Document access control**: Per-buyer document unlocking controlled by broker
-
-## Feature Map (all 4 phases — 48 endpoints)
-
-### Phase 1 — Auth
-- Email/password + Google OAuth, JWT + refresh tokens
-- 3 roles: `broker` (full access) / `user` (registered buyer-seller) / public (anonymous)
-
-### Phase 2 — Listings Engine
-- Full property CRUD (broker-only writes)
-- Public search with Goa-specific filters (region, flood risk, NRI eligibility, short-term rental potential)
-- Two response shapes: `PropertyPublic` (no address) vs `PropertyBroker` (full details)
-- Save/unsave listings, broker sees "who's watching" each property
-- Enquiry system — every buyer message routes through the broker only
-- "Get Free Valuation" seller submission flow → broker reviews → auto-creates draft listing
-- Cloudinary media upload (photos, capped sizes/types)
-
-### Phase 3 — Broker Dashboard
-- `/broker/dashboard` — single endpoint, all home-screen stats
-- `/broker/follow-ups` — leads due for callback
-- `/broker/estimate-price` — **private AI price estimator** (GradientBoostingRegressor trained on Goa locality data), hard-gated to broker role, never reachable from public pages
-- Document vault — per-property docs with granular per-buyer access grants/revokes
-
-### Phase 4 — WhatsApp Bot + NRI Mode
-- `/whatsapp/webhook` — Twilio-powered conversational bot: greets → asks intent → budget → BHK → locality → name → matches listings → creates structured lead automatically
-- `/nri/guide` — FEMA rules, repatriation, tax, document checklist, Goa-specific buying tips
-- `/nri/rental-yield` — long-term vs Airbnb yield calculator using Goa locality rent/occupancy data
-- `/nri/ask` + `/nri/answer` — async Q&A between NRI buyers and broker across time zones
-
-## Running the Price Estimator Standalone
 ```bash
-python -m app.services.estimator   # trains + saves model to price_model.joblib on first call
+npm install
 ```
-The model auto-trains on first use if no saved model is found — no manual step needed in normal operation.
 
-## What's Next (not yet built)
-- Frontend (React) — separate repo/folder
-- Redis-backed WhatsApp session state (currently in-memory, resets on restart)
-- Persisting NRI Q&A to a database table (currently in-memory dict)
-- Real PostGIS-based proximity scoring (beach/airport distances currently broker-entered, not computed)
+```bash
+npm run dev
+```
 
+---
+
+# 📸 Screenshots
+
+## Home Page
+
+> *(Coming Soon)*
+
+---
+
+## Property Listings
+
+> *(Coming Soon)*
+
+---
+
+## Property Details
+
+> *(Coming Soon)*
+
+---
+
+## Broker Dashboard
+
+> *(Coming Soon)*
+
+---
+
+# 🚧 Upcoming Features
+
+- Cloudinary Image Upload
+- Multiple Property Images
+- Property Videos
+- Interactive Maps
+- AI Property Recommendation
+- WhatsApp Integration
+- Email Notifications
+- Mortgage Calculator
+- Admin Dashboard
+- Analytics Dashboard
+- Property Comparison
+- Advanced Search
+- Nearby Amenities
+- Virtual Tours
+
+---
+
+# 📈 Current Progress
+
+- ✅ Backend Architecture
+- ✅ JWT Authentication
+- ✅ Role-based Authorization
+- ✅ Property CRUD
+- ✅ Search & Filters
+- ✅ Docker Setup
+- ✅ PostgreSQL
+- ✅ PostGIS
+- ✅ Alembic Migrations
+- 🔄 Frontend Development
+- 🔄 Cloudinary Integration
+- 🔄 Maps Integration
+- 🔄 Deployment
+
+---
+
+# 👩‍💻 Author
+
+**Sana Shaikh**
+
+Computer Engineering Student
+
+Built with ❤️ using FastAPI, React and PostgreSQL.
+
+GitHub:
+https://github.com/sanashk19
+
+---
+
+# ⭐ Support
+
+If you found this project interesting, consider giving it a ⭐ on GitHub.
