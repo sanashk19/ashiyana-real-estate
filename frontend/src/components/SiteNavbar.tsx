@@ -1,61 +1,210 @@
-import { Link } from "react-router";
-import { AshiyanaLogo, BG, IconMenu, IconPhone, IconPhoneDark, fv } from "@/lib/shared";
+import { useState } from "react";
+import { Link, useLocation } from "react-router";
+import { AshiyanaLogo } from "@/lib/shared";
+import { useBusinessProfile } from "@/context/BusinessProfileContext";
+import { X, Menu, Phone, MessageSquare, ArrowUpRight, PlusCircle } from "lucide-react";
 
 type NavbarProps = {
-  /** "hero" = white text on transparent (homepage hero) | "page" = dark text on white */
   variant?: "hero" | "page";
 };
 
 export function SiteNavbar({ variant = "page" }: NavbarProps) {
   const isHero = variant === "hero";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { profile } = useBusinessProfile();
+  const location = useLocation();
+  const phoneTel = `tel:${(profile?.phone || "+91 832 246 7890").replace(/\s+/g, "")}`;
+
+  // Exact 5 navigation items:
+  // HOME | PROPERTIES | SERVICES | SELL PROPERTY | CONTACT
+  const navLinks = [
+    { to: "/", label: "Home" },
+    { to: "/properties", label: "Properties" },
+    { to: "/services", label: "Services" },
+    { to: "/sell", label: "Sell Property" },
+    { to: "/contact", label: "Contact" },
+  ];
+
+  const isLinkActive = (to: string) => {
+    if (to === "/") return location.pathname === "/";
+    if (to === "/properties") {
+      return location.pathname.startsWith("/properties") || location.pathname.startsWith("/property");
+    }
+    return location.pathname.startsWith(to);
+  };
 
   return (
-    <nav
-      className={`w-full flex items-center justify-center relative z-10 ${
-        isHero ? "py-[40px]" : "py-[20px] border-b border-[#172023]/10 bg-white"
-      }`}
-    >
-      <div className="w-full max-w-[1400px] px-6 flex items-center justify-between">
-        <Link to="/">
-          <AshiyanaLogo dark={!isHero} />
+    <nav className="w-full relative z-30 font-sans">
+      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5 flex items-center justify-between gap-4">
+        
+        {/* 1. Brand Logo */}
+        <Link to="/" className="flex items-center shrink-0">
+          <AshiyanaLogo dark={!isHero} className="h-[46px] sm:h-[54px] object-contain" />
         </Link>
-        <div className="flex gap-[24px] items-center">
+
+        {/* 2. Central Floating Pill Menu (Desktop) */}
+        <div
+          className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border shadow-2xs transition-all ${
+            isHero
+              ? "bg-[#172124]/75 backdrop-blur-md border-white/15 text-white"
+              : "bg-white/95 backdrop-blur-md border-[#EDE8E0] text-[#172124]"
+          }`}
+        >
+          {navLinks.map(({ to, label }) => {
+            const active = isLinkActive(to);
+
+            let buttonClass = "";
+            if (active) {
+              buttonClass = isHero
+                ? "bg-white text-[#172124] font-semibold shadow-xs"
+                : "bg-[#172124] text-white font-semibold shadow-xs";
+            } else {
+              buttonClass = isHero
+                ? "text-white/80 hover:text-white hover:bg-white/10 font-medium"
+                : "text-[#717A7D] hover:text-[#172124] hover:bg-[#FAF7F2] font-medium";
+            }
+
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={`px-4 py-1.5 rounded-full text-[13.5px] transition-all whitespace-nowrap ${buttonClass}`}
+              >
+                {label}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* 3. Right Actions: Phone + Get in Touch Button */}
+        <div className="hidden lg:flex items-center gap-3 shrink-0">
+          <a
+            href={phoneTel}
+            className={`flex items-center gap-2 text-[13.5px] font-medium px-3.5 py-1.5 rounded-full border transition-all ${
+              isHero
+                ? "text-white/90 border-white/20 hover:bg-white/10"
+                : "text-[#172124] border-[#EDE8E0] hover:bg-[#FAF7F2]"
+            }`}
+          >
+            <Phone className="size-3.5 text-[#8B7D68]" />
+            <span>{profile?.phone || "+91 832 246 7890"}</span>
+          </a>
+
           <Link
-            to="/properties"
-            className="font-['Bricolage_Grotesque:SemiBold',sans-serif] font-semibold text-[15px] leading-[1.4] tracking-[-0.1px] hidden md:block transition-opacity hover:opacity-70"
-            style={{ ...fv, color: isHero ? "white" : BG }}
+            to="/contact"
+            className="px-5 py-2 rounded-full text-white text-[13.5px] font-semibold bg-[#172124] hover:bg-[#2C383C] transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
           >
-            Properties
+            <span>Get in touch</span>
+            <ArrowUpRight className="size-3.5" />
           </Link>
-          <div className="flex gap-[8px] items-center">
-            <div className="size-[24px] flex items-center justify-center">
-              {isHero ? <IconPhone /> : <IconPhoneDark />}
-            </div>
-            <span
-              className="font-['Bricolage_Grotesque:SemiBold',sans-serif] font-semibold text-[16px] leading-[1.4] tracking-[-0.1px] whitespace-nowrap"
-              style={{ ...fv, color: isHero ? "white" : BG }}
-            >
-              +91 832 246 7890
-            </span>
-          </div>
-          <div
-            className="h-[20px] w-px"
-            style={{ backgroundColor: isHero ? "rgba(255,255,255,0.4)" : "rgba(23,32,35,0.15)" }}
-          />
-          <button
-            className="flex gap-[12px] items-center justify-center h-[48px] px-[20px] rounded-full btn-hover"
-            style={{ backgroundColor: isHero ? "white" : BG }}
+        </div>
+
+        {/* 4. Mobile Menu Button */}
+        <div className="flex md:hidden items-center gap-2">
+          <Link
+            to="/sell"
+            className="px-3.5 py-1.5 rounded-full text-[#172124] bg-[#FAF7F2] border border-[#EDE8E0] text-[12px] font-semibold shadow-2xs"
           >
-            <IconMenu color={isHero ? BG : "white"} />
-            <span
-              className="font-['Bricolage_Grotesque:SemiBold',sans-serif] font-semibold text-[16px] leading-[1.4] tracking-[-0.1px] whitespace-nowrap"
-              style={{ ...fv, color: isHero ? BG : "white" }}
-            >
-              Menu
-            </span>
+            Sell Property
+          </Link>
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className={`p-2 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
+              isHero
+                ? "bg-[#172124]/80 text-white border-white/15"
+                : "bg-white text-[#172124] border-[#EDE8E0]"
+            }`}
+            aria-label="Toggle navigation menu"
+          >
+            {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
         </div>
       </div>
+
+      {/* 5. Mobile Slide-Out Drawer Menu */}
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-end"
+          onClick={() => setMenuOpen(false)}
+        >
+          <div
+            className="w-full max-w-[340px] h-full bg-[#172124] text-white p-6 flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+              <Link to="/" onClick={() => setMenuOpen(false)}>
+                <AshiyanaLogo dark={false} className="h-[36px] object-contain" />
+              </Link>
+              <button
+                onClick={() => setMenuOpen(false)}
+                className="size-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors cursor-pointer"
+                aria-label="Close menu"
+              >
+                <X className="size-4.5" />
+              </button>
+            </div>
+
+            {/* Mobile Nav Links: EXACT 5 ITEMS */}
+            <div className="flex flex-col gap-2.5 my-auto py-6">
+              {navLinks.map(({ to, label, isSpecial }) => {
+                const active = isLinkActive(to);
+                return (
+                  <Link
+                    key={to}
+                    to={to}
+                    onClick={() => setMenuOpen(false)}
+                    className={`flex items-center justify-between font-display text-[19px] px-4 py-3 rounded-[14px] transition-all ${
+                      active
+                        ? "bg-white text-[#172124] font-bold shadow-xs"
+                        : isSpecial
+                        ? "text-emerald-400 bg-white/5 border border-emerald-500/20 font-semibold"
+                        : "text-white/90 hover:text-white hover:bg-white/10 font-medium"
+                    }`}
+                  >
+                    <span>{label}</span>
+                    {isSpecial && <PlusCircle className="size-4 text-emerald-400" />}
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Mobile Footer Contact Actions */}
+            <div className="flex flex-col gap-3 pt-6 border-t border-white/10">
+              <a
+                href={phoneTel}
+                className="flex items-center gap-3 text-white/90 font-medium text-[14px]"
+              >
+                <div className="size-8 rounded-full bg-white/10 flex items-center justify-center text-[#17805B]">
+                  <Phone className="size-4" />
+                </div>
+                <span>{profile?.phone || "+91 832 246 7890"}</span>
+              </a>
+
+              {profile?.whatsapp_number && (
+                <a
+                  href={`https://wa.me/${profile.whatsapp_number.replace(/\D/g, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 text-white/90 font-medium text-[14px]"
+                >
+                  <div className="size-8 rounded-full bg-white/10 flex items-center justify-center text-emerald-400">
+                    <MessageSquare className="size-4" />
+                  </div>
+                  <span>Chat on WhatsApp</span>
+                </a>
+              )}
+
+              <Link
+                to="/sell"
+                onClick={() => setMenuOpen(false)}
+                className="w-full mt-2 py-2.5 rounded-full bg-[#C4A66A] text-[#172124] font-bold text-[13.5px] text-center hover:bg-[#B89B5E] transition-colors"
+              >
+                Submit Property to Sell
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

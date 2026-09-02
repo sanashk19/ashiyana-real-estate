@@ -20,7 +20,6 @@ from app.core.config import settings
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp bot"])
 
 # ── Conversation state store (in-memory, keyed by phone number) ───────────────
-# For production: move this to Redis
 _sessions: dict[str, dict] = {}
 
 
@@ -111,12 +110,12 @@ async def whatsapp_webhook(
     ):
         _sessions[phone] = {"step": "ask_intent", "name": None}
         return _twiml_reply(
-            "🏠 *Ashiyana Buy Sell Rent*\n\n"
-            "Welcome! I'm here to help you find the perfect property in Goa.\n\n"
+            "*Ashiyana Buy Sell Rent*\n\n"
+            "Welcome! I am here to help you find the perfect property in Goa.\n\n"
             "Are you looking to:\n"
-            "1️⃣ *Buy* a property\n"
-            "2️⃣ *Rent* a property\n"
-            "3️⃣ *Sell / List* your property\n\n"
+            "1. *Buy* a property\n"
+            "2. *Rent* a property\n"
+            "3. *Sell / List* your property\n\n"
             "Reply with 1, 2, or 3."
         )
 
@@ -131,16 +130,16 @@ async def whatsapp_webhook(
             _sessions.pop(phone, None)
             return _twiml_reply(
                 "Great! Our broker will contact you to discuss listing your property.\n\n"
-                "You can also fill our *Free Valuation Form* at:\n"
-                f"🔗 {settings.FRONTEND_URL}/valuation\n\n"
-                "We'll be in touch shortly! 🙏"
+                "You can also submit our *Property Valuation Form* at:\n"
+                f"{settings.FRONTEND_URL}/sell\n\n"
+                "We will be in touch shortly!"
             )
         else:
             return _twiml_reply("Please reply with *1* (Buy), *2* (Rent), or *3* (Sell).")
 
         _sessions[phone] = session
         return _twiml_reply(
-            f"Looking to *{'buy' if session['intent'] == 'buy' else 'rent'}* — great choice! 🏡\n\n"
+            f"Looking to *{'buy' if session['intent'] == 'buy' else 'rent'}* — great choice!\n\n"
             "What is your *budget*?\n"
             "_(e.g. 50 lakhs, 1.5 crore, 25000/month)_"
         )
@@ -151,7 +150,7 @@ async def whatsapp_webhook(
         session.update({"step": "ask_bhk", "budget": budget})
         _sessions[phone] = session
         return _twiml_reply(
-            "Got it! 💰\n\n"
+            "Got it!\n\n"
             "How many *bedrooms* are you looking for?\n"
             "_(e.g. 1 BHK, 2 BHK, 3 BHK — or type 'any')_"
         )
@@ -162,7 +161,7 @@ async def whatsapp_webhook(
         session.update({"step": "ask_locality", "bedrooms": bedrooms})
         _sessions[phone] = session
         return _twiml_reply(
-            "Perfect! 🛏️\n\n"
+            "Understood.\n\n"
             "Any preferred *area or locality* in Goa?\n"
             "_(e.g. Calangute, Panjim, Margao, South Goa — or type 'any')_"
         )
@@ -173,7 +172,7 @@ async def whatsapp_webhook(
         session.update({"step": "ask_name", "locality": locality})
         _sessions[phone] = session
         return _twiml_reply(
-            "Great! One last thing — what's your *name*? 😊"
+            "Great! One last thing — what is your *name*?"
         )
 
     # ── Step: name → find listings + save lead ────────────────────────────────
@@ -192,14 +191,13 @@ async def whatsapp_webhook(
 
         # Save structured lead to broker dashboard
         if matches:
-            # Create enquiry for the top match
             lead = Enquiry(
                 property_id=matches[0].id,
                 buyer_name=name,
                 buyer_phone=phone,
                 message=(
                     f"WhatsApp lead | Intent: {session.get('intent')} | "
-                    f"Budget: ₹{session.get('budget', 'not specified')} | "
+                    f"Budget: INR {session.get('budget', 'not specified')} | "
                     f"BHK: {session.get('bedrooms', 'any')} | "
                     f"Locality: {session.get('locality', 'any')}"
                 ),
@@ -210,38 +208,38 @@ async def whatsapp_webhook(
             await db.flush()
 
         # Build reply with matching listings
-        _sessions.pop(phone, None)  # clear session
+        _sessions.pop(phone, None)
 
         if not matches:
             return _twiml_reply(
-                f"Thank you, *{name}*! 🙏\n\n"
-                "We don't have exact matches right now, but our broker will personally "
-                "reach out with options.\n\n"
-                "Expect a call soon! 📞"
+                f"Thank you, *{name}*!\n\n"
+                "We do not have exact matches right now, but our broker will personally "
+                "reach out with curated options.\n\n"
+                "Expect a call soon."
             )
 
         reply = f"Thank you, *{name}*! Here are your top matches:\n\n"
         for i, prop in enumerate(matches, 1):
             price_display = (
-                f"₹{prop.price/100000:.1f}L/mo"
+                f"INR {prop.price/100000:.1f}L/mo"
                 if session.get("intent") == "rent"
-                else f"₹{prop.price/100000:.1f}L"
+                else f"INR {prop.price/100000:.1f}L"
             )
             reply += (
                 f"*{i}. {prop.title}*\n"
-                f"📍 {prop.locality}\n"
-                f"💰 {price_display}"
+                f"Location: {prop.locality}\n"
+                f"Price: {price_display}"
             )
             if prop.bedrooms:
-                reply += f" | 🛏 {prop.bedrooms} BHK"
-            reply += f"\n🔗 {settings.FRONTEND_URL}/property/{prop.id}\n\n"
+                reply += f" | {prop.bedrooms} BHK"
+            reply += f"\nLink: {settings.FRONTEND_URL}/property/{prop.id}\n\n"
 
-        reply += "Our broker will call you shortly to arrange site visits! 🏡"
+        reply += "Our broker will call you shortly to arrange site visits!"
         return _twiml_reply(reply)
 
     # ── Fallback ──────────────────────────────────────────────────────────────
     _sessions.pop(phone, None)
     return _twiml_reply(
-        "Hi! 👋 Type *hi* to start finding your perfect property in Goa.\n"
-        "Or call us directly for immediate assistance. 📞"
+        "Hello! Type *hi* to start finding your property in Goa.\n"
+        "Or call us directly for immediate assistance."
     )

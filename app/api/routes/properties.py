@@ -1,18 +1,32 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
+import cloudinary
+import cloudinary.uploader
 
+from app.core.config import settings
 from app.db.database import get_db
 from app.core.dependencies import get_current_user, get_optional_user, require_broker, require_registered_user
 from app.models.models import User, UserRole, PropertyType, ListingType, GoaRegion, PropertyStatus
 from app.schemas.properties import (
     PropertyCreate, PropertyUpdate, PropertyFilters,
     PropertyPublic, PropertyBroker, PropertyCard,
+    PropertyImageResponse, PropertyImageCreate, PropertyImageBatchCreate,
+    PropertyImageReorderRequest,
 )
 from app.services.property_service import PropertyService
 
+cloudinary.config(
+    cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+    api_key=settings.CLOUDINARY_API_KEY,
+    api_secret=settings.CLOUDINARY_API_SECRET,
+)
+
 router = APIRouter(prefix="/properties", tags=["properties"])
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 # ── Public: search / browse ────────────────────────────────────────────────────
@@ -32,7 +46,7 @@ async def list_properties(
     
     is_featured: Optional[bool] = None,
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=20, ge=1, le=50),
+    limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -99,16 +113,18 @@ async def get_property(
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
+    # Broker gets full details
+    if current_user and current_user.role == UserRole.broker:
+        response_data = PropertyBroker.model_validate(prop).model_dump(mode="json")
+    else:
+        # Everyone else gets public response — address never included
+        response_data = PropertyPublic.model_validate(prop).model_dump(mode="json")
+
     # Increment view count for active listings
     if prop.status == PropertyStatus.active:
         await PropertyService.increment_view(db, prop)
 
-    # Broker gets full details
-    if current_user and current_user.role == UserRole.broker:
-        return PropertyBroker.model_validate(prop).model_dump()
-
-    # Everyone else gets public response — address never included
-    return PropertyPublic.model_validate(prop).model_dump()
+    return response_data
 
 
 # ── Broker: create / edit / delete ────────────────────────────────────────────
@@ -195,3 +211,184 @@ async def property_watchers(
         {"user_id": str(w.user_id), "saved_at": w.saved_at.isoformat()}
         for w in watchers
     ]
+
+
+import os
+import uuid
+
+# ── Property Image Management ──────────────────────────────────────────────────
+
+@router.get("/{property_id}/images", response_model=List[PropertyImageResponse])
+async def list_property_images(
+    property_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public: list all images for a property in display order."""
+    prop = await PropertyService.get_by_id(db, property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    images = await PropertyService.get_images(db, property_id)
+    return [PropertyImageResponse.model_validate(img) for img in images]
+
+
+@router.post(
+    "/{property_id}/images/upload",
+    response_model=List[PropertyImageResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_property_images(
+    property_id: UUID,
+    files: List[UploadFile] = File(...),
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Broker only: upload up to 10 photos.
+    Uses Cloudinary when real credentials are provided; gracefully uses local static uploads for local development.
+    """
+    prop = await PropertyService.get_by_id(db, property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="Max 10 photos per upload batch")
+
+    image_creates: List[PropertyImageCreate] = []
+    has_cloudinary_config = (
+        settings.CLOUDINARY_CLOUD_NAME
+        and settings.CLOUDINARY_CLOUD_NAME not in ["your-cloud-name", "your_cloud_name", ""]
+        and settings.CLOUDINARY_API_KEY not in ["your-api-key", "your_api_key", ""]
+    )
+
+    for file in files:
+        if file.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type: {file.content_type}. Allowed: JPEG, PNG, WebP.",
+            )
+
+        content = await file.read()
+        if len(content) > MAX_IMAGE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{file.filename} exceeds 10MB limit.",
+            )
+
+        image_url = None
+        if has_cloudinary_config:
+            try:
+                result = cloudinary.uploader.upload(
+                    content,
+                    folder=f"ashiyana/properties/{property_id}",
+                    transformation=[
+                        {"width": 1920, "height": 1080, "crop": "limit", "quality": "auto"},
+                    ],
+                )
+                image_url = result.get("secure_url")
+            except Exception as e:
+                # Log and fallback to local storage
+                print(f"Cloudinary upload warning: {e}. Falling back to local static storage.")
+
+        if not image_url:
+            # Local storage fallback for development
+            upload_dir = os.path.join("uploads", "properties", str(property_id))
+            os.makedirs(upload_dir, exist_ok=True)
+            # Sanitize or randomize filename to prevent collision
+            clean_filename = f"{uuid.uuid4().hex[:8]}_{file.filename}"
+            file_path = os.path.join(upload_dir, clean_filename)
+            with open(file_path, "wb") as f:
+                f.write(content)
+            image_url = f"http://127.0.0.1:8000/uploads/properties/{property_id}/{clean_filename}"
+
+        image_creates.append(
+            PropertyImageCreate(
+                image_url=image_url,
+                caption=file.filename,
+            )
+        )
+
+    created_images = await PropertyService.add_images(db, property_id, image_creates)
+    return [PropertyImageResponse.model_validate(img) for img in created_images]
+
+
+@router.post(
+    "/{property_id}/images",
+    response_model=List[PropertyImageResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def attach_property_images(
+    property_id: UUID,
+    data: PropertyImageBatchCreate,
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Broker only: attach pre-uploaded Cloudinary URLs to a property.
+    """
+    prop = await PropertyService.get_by_id(db, property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    created = await PropertyService.add_images(db, property_id, data.images)
+    return [PropertyImageResponse.model_validate(img) for img in created]
+
+
+@router.delete("/{property_id}/images/{image_id}", response_model=dict)
+async def delete_property_image(
+    property_id: UUID,
+    image_id: UUID,
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Broker only: delete an image from the property and database.
+    """
+    prop = await PropertyService.get_by_id(db, property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    deleted = await PropertyService.delete_image(db, property_id, image_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Image not found on this property")
+
+    return {"message": "Image deleted successfully"}
+
+
+@router.patch("/{property_id}/images/reorder", response_model=List[PropertyImageResponse])
+async def reorder_property_images(
+    property_id: UUID,
+    data: PropertyImageReorderRequest,
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Broker only: reorder property images by updating display_order.
+    """
+    prop = await PropertyService.get_by_id(db, property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    updated = await PropertyService.reorder_images(db, property_id, data.items)
+    return [PropertyImageResponse.model_validate(img) for img in updated]
+
+
+@router.patch("/{property_id}/images/{image_id}/thumbnail", response_model=PropertyImageResponse)
+async def set_property_thumbnail(
+    property_id: UUID,
+    image_id: UUID,
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Broker only: set a specific image as the primary cover thumbnail.
+    """
+    prop = await PropertyService.get_by_id(db, property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    thumb = await PropertyService.set_thumbnail(db, property_id, image_id)
+    if not thumb:
+        raise HTTPException(status_code=404, detail="Image not found on this property")
+
+    return PropertyImageResponse.model_validate(thumb)
+

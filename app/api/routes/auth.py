@@ -21,7 +21,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _issue_tokens(user: User) -> TokenResponse:
-    access = create_access_token({"sub": str(user.id), "role": user.role})
+    role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
+    access = create_access_token({"sub": str(user.id), "role": role_val})
     refresh = create_refresh_token({"sub": str(user.id)})
     return TokenResponse(access_token=access, refresh_token=refresh)
 
@@ -42,6 +43,56 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.flush()   # get the UUID before commit
+    await db.commit()
+    await db.refresh(user)
+    return _issue_tokens(user)
+
+
+@router.post("/seller/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def register_seller(
+    data: UserRegister,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Dedicated registration for property owners / sellers on Ashiyana.
+    Creates a user with role='seller'.
+    """
+    result = await db.execute(select(User).where(User.email == data.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="This email is already registered. Please sign in.")
+
+    seller_user = User(
+        email=data.email,
+        hashed_password=hash_password(data.password),
+        full_name=data.full_name,
+        phone=data.phone,
+        is_nri=data.is_nri,
+        role=UserRole.seller,
+    )
+    db.add(seller_user)
+    await db.flush()
+    await db.commit()
+    await db.refresh(seller_user)
+    return _issue_tokens(seller_user)
+
+
+@router.post("/seller/login", response_model=TokenResponse)
+async def login_seller(data: UserLogin, db: AsyncSession = Depends(get_db)):
+    """
+    Seller sign in endpoint.
+    """
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.hashed_password:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not verify_password(data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account disabled. Please contact support.")
+
     return _issue_tokens(user)
 
 

@@ -15,9 +15,10 @@ import uuid
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 class UserRole(str, PyEnum):
-    broker = "broker"       # your dad — full access
-    user = "user"           # registered buyer/seller
-    public = "public"       # unauthenticated visitor
+    broker = "broker"       # Lead broker (Kassim Shaikh) — full access
+    seller = "seller"       # Registered property owner / seller
+    user = "user"           # Registered user
+    public = "public"       # Unauthenticated visitor
 
 
 class PropertyType(str, PyEnum):
@@ -113,6 +114,7 @@ class User(Base):
     enquiries = relationship("Enquiry", back_populates="user", cascade="all, delete-orphan")
     saved_properties = relationship("SavedProperty", back_populates="user", cascade="all, delete-orphan")
     seller_submissions = relationship("SellerSubmission", back_populates="user")
+    documents = relationship("SellerDocument", back_populates="user", cascade="all, delete-orphan")
 
 
 class Property(Base):
@@ -205,7 +207,7 @@ class Property(Base):
     view_count = Column(Integer, default=0)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     enquiries = relationship("Enquiry", back_populates="property", cascade="all, delete-orphan")
@@ -289,6 +291,34 @@ class SellerSubmission(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="seller_submissions")
+    seller_documents = relationship("SellerDocument", back_populates="submission")
+
+
+class SellerDocument(Base):
+    """
+    Secure Document Vault for registered property sellers.
+    Strictly private - accessible only by the owning seller and verified broker.
+    Files are stored in private server storage (uploads/secure_documents/).
+    """
+    __tablename__ = "seller_documents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("seller_submissions.id"), nullable=True, index=True)
+
+    title = Column(String(255), nullable=False)
+    doc_type = Column(String(100), nullable=False, default="other")  # sale_deed, title_document, tax_receipt, encumbrance_cert, id_proof, address_proof, other
+    file_path = Column(String(500), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    file_size = Column(Integer, nullable=False, default=0)
+    mime_type = Column(String(100), nullable=False, default="application/octet-stream")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="documents")
+    submission = relationship("SellerSubmission", back_populates="seller_documents")
 
 
 class PropertyDocument(Base):
@@ -382,6 +412,29 @@ class Valuation(Base):
     estimated_low = Column(Numeric(15, 2))
     estimated_mid = Column(Numeric(15, 2))
     estimated_high = Column(Numeric(15, 2))
-    confidence_score = Column(Numeric(5, 2), nullable=True)  # 0-1
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class BusinessProfile(Base):
+    """
+    Database-backed business profile and social media settings for Ashiyana Real Estate.
+    Provides a single source of truth for the entire application.
+    """
+    __tablename__ = "business_profiles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    broker_name = Column(String(255), nullable=False, default="Kassim Shaikh")
+    broker_role = Column(String(255), nullable=False, default="Lead Broker & Founder")
+    company_name = Column(String(255), nullable=False, default="Ashiyana Real Estate")
+    phone = Column(String(50), nullable=False, default="+91 8888083558")
+    whatsapp_number = Column(String(50), nullable=False, default="918888083558")
+    email = Column(String(255), nullable=False, default="ashiyanarentbuysell@gmail.com")
+    office_address = Column(String(500), nullable=False, default="Calangute & Panaji, Goa, India")
+
+    # Social links — stored in PostgreSQL, only shown if configured
+    facebook_url = Column(String(500), nullable=True)
+    instagram_url = Column(String(500), nullable=True)
+    olx_url = Column(String(500), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

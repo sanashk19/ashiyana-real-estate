@@ -1,10 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 from typing import List, Tuple
 
-from app.models.models import Property, PropertyStatus, SavedProperty
-from app.schemas.properties import PropertyCreate, PropertyUpdate, PropertyFilters
+from app.models.models import Property, PropertyStatus, SavedProperty, PropertyImage
+from app.schemas.properties import (
+    PropertyCreate,
+    PropertyUpdate,
+    PropertyFilters,
+    PropertyImageCreate,
+    PropertyImageReorderItem,
+)
 
 
 class PropertyService:
@@ -56,8 +63,15 @@ class PropertyService:
 
     @staticmethod
     async def increment_view(db: AsyncSession, prop: Property) -> None:
-        prop.view_count = (prop.view_count or 0) + 1
-        await db.flush()
+        from sqlalchemy import update
+        new_count = (prop.view_count or 0) + 1
+        prop.view_count = new_count
+        await db.execute(
+            update(Property)
+            .where(Property.id == prop.id)
+            .values(view_count=new_count)
+            .execution_options(synchronize_session=False)
+        )
 
     @staticmethod
     async def search(
@@ -79,7 +93,15 @@ class PropertyService:
         if filters.region:
             conditions.append(Property.region == filters.region)
         if filters.locality:
-            conditions.append(Property.locality.ilike(f"%{filters.locality}%"))
+            q = filters.locality.strip()
+            conditions.append(
+                or_(
+                    Property.title.ilike(f"%{q}%"),
+                    Property.locality.ilike(f"%{q}%"),
+                    Property.village.ilike(f"%{q}%"),
+                    Property.taluka.ilike(f"%{q}%"),
+                )
+            )
         if filters.min_price is not None:
             conditions.append(Property.price >= filters.min_price)
         if filters.max_price is not None:
@@ -179,3 +201,126 @@ class PropertyService:
             .order_by(SavedProperty.saved_at.desc())
         )
         return result.scalars().all()
+
+    @staticmethod
+    async def add_images(
+        db: AsyncSession,
+        property_id: UUID,
+        image_data_list: List[PropertyImageCreate],
+    ) -> List[PropertyImage]:
+        """
+        Add multiple images to a property.
+        Sets display_order sequentially and sets first image as thumbnail if none exists.
+        """
+        existing_result = await db.execute(
+            select(PropertyImage)
+            .where(PropertyImage.property_id == property_id)
+            .order_by(PropertyImage.display_order.asc())
+        )
+        existing_images = existing_result.scalars().all()
+        has_thumbnail = any(img.is_thumbnail for img in existing_images)
+        current_max_order = max([img.display_order or 0 for img in existing_images], default=0)
+
+        created_images: List[PropertyImage] = []
+        for i, img_data in enumerate(image_data_list):
+            order = img_data.display_order if img_data.display_order is not None else (current_max_order + i + 1)
+            is_thumb = img_data.is_thumbnail or (not has_thumbnail and i == 0)
+            if is_thumb:
+                has_thumbnail = True
+
+            new_img = PropertyImage(
+                property_id=property_id,
+                image_url=img_data.image_url,
+                caption=img_data.caption,
+                display_order=order,
+                is_thumbnail=is_thumb,
+            )
+            db.add(new_img)
+            created_images.append(new_img)
+
+        await db.flush()
+        return created_images
+
+    @staticmethod
+    async def get_images(
+        db: AsyncSession, property_id: UUID
+    ) -> List[PropertyImage]:
+        result = await db.execute(
+            select(PropertyImage)
+            .where(PropertyImage.property_id == property_id)
+            .order_by(PropertyImage.display_order.asc(), PropertyImage.created_at.asc())
+        )
+        return result.scalars().all()
+
+    @staticmethod
+    async def delete_image(
+        db: AsyncSession, property_id: UUID, image_id: UUID
+    ) -> bool:
+        result = await db.execute(
+            select(PropertyImage).where(
+                PropertyImage.id == image_id,
+                PropertyImage.property_id == property_id,
+            )
+        )
+        img = result.scalar_one_or_none()
+        if not img:
+            return False
+
+        was_thumbnail = img.is_thumbnail
+        await db.delete(img)
+        await db.flush()
+
+        # If deleted image was the thumbnail, make the first remaining image thumbnail
+        if was_thumbnail:
+            remaining_result = await db.execute(
+                select(PropertyImage)
+                .where(PropertyImage.property_id == property_id)
+                .order_by(PropertyImage.display_order.asc())
+            )
+            remaining_images = remaining_result.scalars().all()
+            if remaining_images:
+                remaining_images[0].is_thumbnail = True
+                await db.flush()
+
+        return True
+
+    @staticmethod
+    async def reorder_images(
+        db: AsyncSession,
+        property_id: UUID,
+        items: List[PropertyImageReorderItem],
+    ) -> List[PropertyImage]:
+        for item in items:
+            result = await db.execute(
+                select(PropertyImage).where(
+                    PropertyImage.id == item.image_id,
+                    PropertyImage.property_id == property_id,
+                )
+            )
+            img = result.scalar_one_or_none()
+            if img:
+                img.display_order = item.display_order
+
+        await db.flush()
+        return await PropertyService.get_images(db, property_id)
+
+    @staticmethod
+    async def set_thumbnail(
+        db: AsyncSession, property_id: UUID, image_id: UUID
+    ) -> PropertyImage | None:
+        images_result = await db.execute(
+            select(PropertyImage).where(PropertyImage.property_id == property_id)
+        )
+        images = images_result.scalars().all()
+        target_img = None
+        for img in images:
+            if img.id == image_id:
+                img.is_thumbnail = True
+                target_img = img
+            else:
+                img.is_thumbnail = False
+
+        if target_img:
+            await db.flush()
+        return target_img
+

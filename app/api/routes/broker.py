@@ -8,12 +8,13 @@ from typing import List
 from app.db.database import get_db
 from app.core.dependencies import require_broker, require_registered_user
 from app.models.models import (
-    User, Property, Enquiry, SellerSubmission,
-    PropertyDocument, PropertyStatus, LeadStatus, SubmissionStatus,
+    User, UserRole, Property, Enquiry, SellerSubmission,
+    PropertyDocument, SellerDocument, PropertyStatus, LeadStatus, SubmissionStatus,
 )
 from app.schemas.broker import (
     DocumentUpload, DocumentAccessGrant, DocumentOut,
     ValuationRequest, ValuationOut, DashboardStats,
+    BrokerSellerListItemOut, BrokerSellerDetailOut,
 )
 
 router = APIRouter(prefix="/broker", tags=["broker dashboard"])
@@ -353,3 +354,139 @@ async def buyer_documents(
         }
         for d in accessible
     ]
+
+
+# ── Sellers Management ────────────────────────────────────────────────────────
+
+@router.get("/sellers", response_model=List[BrokerSellerListItemOut])
+async def get_sellers(
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns all registered property sellers from PostgreSQL with metrics.
+    """
+    sellers_res = await db.execute(
+        select(User).where(User.role.in_([UserRole.seller, UserRole.user])).order_by(User.created_at.desc())
+    )
+    sellers = sellers_res.scalars().all()
+
+    output = []
+    for s in sellers:
+        # Submissions count
+        subs_cnt = (await db.execute(
+            select(func.count(SellerSubmission.id)).where(SellerSubmission.user_id == s.id)
+        )).scalar() or 0
+
+        # Listed properties count
+        listed_cnt = (await db.execute(
+            select(func.count(SellerSubmission.id)).where(
+                SellerSubmission.user_id == s.id,
+                SellerSubmission.status == SubmissionStatus.listed
+            )
+        )).scalar() or 0
+
+        # Documents count
+        docs_cnt = (await db.execute(
+            select(func.count(SellerDocument.id)).where(SellerDocument.user_id == s.id)
+        )).scalar() or 0
+
+        output.append(
+            BrokerSellerListItemOut(
+                id=s.id,
+                full_name=s.full_name,
+                email=s.email,
+                phone=s.phone,
+                role=s.role.value if hasattr(s.role, "value") else str(s.role),
+                is_active=s.is_active,
+                created_at=s.created_at,
+                submissions_count=subs_cnt,
+                listed_properties_count=listed_cnt,
+                documents_count=docs_cnt,
+            )
+        )
+    return output
+
+
+@router.get("/sellers/{seller_id}", response_model=BrokerSellerDetailOut)
+async def get_seller_detail(
+    seller_id: UUID,
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns detailed seller profile including submissions, listed properties, and uploaded documents.
+    """
+    seller_res = await db.execute(select(User).where(User.id == seller_id))
+    seller = seller_res.scalar_one_or_none()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller not found")
+
+    # Fetch submissions
+    subs_res = await db.execute(
+        select(SellerSubmission).where(SellerSubmission.user_id == seller_id).order_by(SellerSubmission.created_at.desc())
+    )
+    submissions = subs_res.scalars().all()
+    subs_data = [
+        {
+            "id": str(sub.id),
+            "property_type": sub.property_type.value if hasattr(sub.property_type, "value") else str(sub.property_type),
+            "listing_type": sub.listing_type.value if hasattr(sub.listing_type, "value") else str(sub.listing_type),
+            "locality": sub.locality,
+            "area_sqft": sub.area_sqft,
+            "bedrooms": sub.bedrooms,
+            "asking_price": float(sub.asking_price) if sub.asking_price is not None else None,
+            "description": sub.description,
+            "submitted_photos": sub.submitted_photos or [],
+            "status": sub.status.value if hasattr(sub.status, "value") else str(sub.status),
+            "created_at": sub.created_at.isoformat() if sub.created_at else None,
+            "converted_property_id": str(sub.converted_property_id) if sub.converted_property_id else None,
+        }
+        for sub in submissions
+    ]
+
+    # Fetch listed properties
+    prop_ids = [sub.converted_property_id for sub in submissions if sub.converted_property_id]
+    listed_props_data = []
+    if prop_ids:
+        props_res = await db.execute(select(Property).where(Property.id.in_(prop_ids)))
+        for p in props_res.scalars().all():
+            listed_props_data.append({
+                "id": str(p.id),
+                "title": p.title,
+                "locality": p.locality,
+                "price": float(p.price) if p.price is not None else 0.0,
+                "status": p.status.value if hasattr(p.status, "value") else str(p.status),
+            })
+
+    # Fetch documents
+    docs_res = await db.execute(
+        select(SellerDocument).where(SellerDocument.user_id == seller_id).order_by(SellerDocument.created_at.desc())
+    )
+    docs = docs_res.scalars().all()
+    docs_data = [
+        {
+            "id": str(d.id),
+            "title": d.title,
+            "doc_type": d.doc_type,
+            "original_filename": d.original_filename,
+            "file_size": d.file_size,
+            "mime_type": d.mime_type,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "download_url": f"/api/seller/documents/{d.id}/download",
+        }
+        for d in docs
+    ]
+
+    return BrokerSellerDetailOut(
+        id=seller.id,
+        full_name=seller.full_name,
+        email=seller.email,
+        phone=seller.phone,
+        role=seller.role.value if hasattr(seller.role, "value") else str(seller.role),
+        is_active=seller.is_active,
+        created_at=seller.created_at,
+        submissions=subs_data,
+        listed_properties=listed_props_data,
+        documents=docs_data,
+    )

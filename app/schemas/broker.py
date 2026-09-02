@@ -78,3 +78,37 @@ class DashboardStats(BaseModel):
     most_viewed_property_id: Optional[str]
     most_viewed_property_title: Optional[str]
     most_viewed_count: int
+
+
+# ── Broker Seller Management Schemas ──────────────────────────────────────────
+
+class BrokerSellerListItemOut(BaseModel):
+    id: UUID
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+    role: str
+    is_active: bool
+    created_at: datetime
+    submissions_count: int
+    listed_properties_count: int
+    documents_count: int
+
+    class Config:
+        from_attributes = True
+
+
+class BrokerSellerDetailOut(BaseModel):
+    id: UUID
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+    role: str
+    is_active: bool
+    created_at: datetime
+    submissions: List[dict]
+    listed_properties: List[dict]
+    documents: List[dict]
+
+    class Config:
+        from_attributes = True

@@ -9,3 +9,10 @@ venv/
 *.egg-info/
 dist/
 build/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+uploads/
+secure_vault/
+scratch/
+.tempmediaStorage/

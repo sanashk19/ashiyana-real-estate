@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 from typing import Optional
 
@@ -77,7 +78,7 @@ async def list_enquiries(
     if is_nri is not None:
         conditions.append(Enquiry.is_nri == is_nri)
 
-    query = select(Enquiry)
+    query = select(Enquiry).options(selectinload(Enquiry.property))
     if conditions:
         query = query.where(and_(*conditions))
 
@@ -85,7 +86,13 @@ async def list_enquiries(
         query.order_by(Enquiry.created_at.desc()).offset(skip).limit(limit)
     )
     enquiries = result.scalars().all()
-    return [EnquiryOut.model_validate(e).model_dump() for e in enquiries]
+    out = []
+    for e in enquiries:
+        item = EnquiryOut.model_validate(e)
+        if e.property:
+            item.property_title = f"{e.property.title} ({e.property.locality})"
+        out.append(item.model_dump())
+    return out
 
 
 @router.patch("/enquiries/{enquiry_id}", response_model=dict)
@@ -164,6 +171,8 @@ async def submit_valuation_request(
     )
     db.add(submission)
     await db.flush()
+    await db.commit()
+    await db.refresh(submission)
 
     return {
         "message": "Valuation request received. Our broker will contact you within 24 hours.",
@@ -213,30 +222,57 @@ async def review_submission(
     for key, value in update_data.items():
         setattr(submission, key, value)
 
-    # If accepted, auto-create a draft property listing
-    if data.status == SubmissionStatus.accepted and not submission.converted_property_id:
-        from app.models.models import Property, GoaRegion
+    # If accepted or listed, auto-create an active property listing
+    if data.status in [SubmissionStatus.accepted, SubmissionStatus.listed] and not submission.converted_property_id:
+        from app.models.models import Property, PropertyImage, GoaRegion, PossessionStatus, PropertyStatus
         draft = Property(
             title=f"{submission.property_type.value.title()} in {submission.locality}",
             property_type=submission.property_type,
             listing_type=submission.listing_type,
+            status=PropertyStatus.active,
             price=submission.asking_price or 0.0,
             locality=submission.locality,
             region=GoaRegion.north_goa,   # broker updates after reviewing
             bedrooms=submission.bedrooms,
+            bathrooms=2,
             area_sqft=submission.area_sqft,
             description=submission.description,
-            photos=submission.submitted_photos,
+            connectivity_score=8,
+            possession_status=PossessionStatus.ready_to_move,
+            nri_eligible=True,
+            fema_compliant=True,
+            price_negotiable=True,
             created_by=broker.id,
         )
         db.add(draft)
         await db.flush()
+
+        if submission.submitted_photos:
+            for idx, photo_url in enumerate(submission.submitted_photos):
+                img = PropertyImage(
+                    property_id=draft.id,
+                    image_url=photo_url,
+                    display_order=idx + 1,
+                    is_thumbnail=(idx == 0),
+                )
+                db.add(img)
+            await db.flush()
+
         submission.converted_property_id = draft.id
         submission.status = SubmissionStatus.listed
+        await db.commit()
 
         return {
-            "message": "Submission accepted — draft listing created",
+            "message": "Submission accepted — listing created",
             "property_id": str(draft.id),
+            "converted_property_id": str(draft.id),
+            "status": submission.status.value,
         }
 
-    return {"message": "Submission updated"}
+    await db.commit()
+    return {
+        "message": "Submission updated",
+        "id": str(submission_id),
+        "status": submission.status.value,
+        "converted_property_id": str(submission.converted_property_id) if submission.converted_property_id else None,
+    }

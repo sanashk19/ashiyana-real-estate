@@ -29,17 +29,17 @@ class PropertyBase(BaseModel):
     total_floors: Optional[int] = None
     age_years: Optional[int] = None
     furnished: Optional[str] = None
-    facing: Optional[Facing]
+    facing: Optional[Facing] = None
     locality: str
     village: Optional[str] = None
     taluka: Optional[str] = None
-    region: GoaRegion
+    region: GoaRegion = GoaRegion.north_goa
     pin_code: Optional[str] = None
     amenities: List[str] = []
     nri_eligible: bool = True
     fema_compliant: bool = True
     
-    possession_status: Optional[PossessionStatus]
+    possession_status: Optional[PossessionStatus] = PossessionStatus.ready_to_move
 
 
 # ── Broker creates/edits listing ───────────────────────────────────────────────
@@ -60,25 +60,48 @@ class PropertyCreate(PropertyBase):
     tourist_density: Optional[str] = None
     short_term_rental_potential: bool = False
     connectivity_score: int = Field(
+        default=8,
         ge=1,
         le=10
     )
     is_featured: bool = False
+    status: Optional[PropertyStatus] = PropertyStatus.active
     property_video_url: Optional[str] = None
     
-    facing: Optional[Facing]
-    possession_status: Optional[PossessionStatus]
+    facing: Optional[Facing] = None
+    possession_status: Optional[PossessionStatus] = PossessionStatus.ready_to_move
     
 
 class PropertyImageResponse(BaseModel):
     id: UUID
     image_url: str
-    caption: Optional[str]
+    caption: Optional[str] = None
     display_order: int
     is_thumbnail: bool
 
     class Config:
         from_attributes = True
+
+
+class PropertyImageCreate(BaseModel):
+    image_url: str
+    caption: Optional[str] = None
+    display_order: Optional[int] = None
+    is_thumbnail: Optional[bool] = False
+
+
+class PropertyImageBatchCreate(BaseModel):
+    images: List[PropertyImageCreate]
+
+
+class PropertyImageReorderItem(BaseModel):
+    image_id: UUID
+    display_order: int
+
+
+class PropertyImageReorderRequest(BaseModel):
+    items: List[PropertyImageReorderItem]
+
         
 class PropertyUpdate(BaseModel):
     """All fields optional for PATCH updates."""
@@ -97,8 +120,8 @@ class PropertyUpdate(BaseModel):
     tourist_density: Optional[str] = None
     is_featured: Optional[bool] = None
     property_video_url: Optional[str] = None
-    facing: Optional[Facing]
-    possession_status: Optional[PossessionStatus]
+    facing: Optional[Facing] = None
+    possession_status: Optional[PossessionStatus] = None
     
 
 
@@ -112,45 +135,45 @@ class PropertyPublic(BaseModel):
     """
     id: UUID
     title: str
-    description: Optional[str]
+    description: Optional[str] = None
     property_type: PropertyType
     listing_type: ListingType
     status: PropertyStatus
     price: float
-    price_negotiable: bool
-    security_deposit: Optional[float]
-    bedrooms: Optional[int]
-    bathrooms: Optional[int]
-    area_sqft: Optional[float]
-    floor_number: Optional[int]
-    total_floors: Optional[int]
-    age_years: Optional[int]
-    furnished: Optional[str]
-    facing: Optional[Facing]
+    price_negotiable: bool = True
+    security_deposit: Optional[float] = None
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[int] = None
+    area_sqft: Optional[float] = None
+    floor_number: Optional[int] = None
+    total_floors: Optional[int] = None
+    age_years: Optional[int] = None
+    furnished: Optional[str] = None
+    facing: Optional[Facing] = None
     locality: str
-    village: Optional[str]
+    village: Optional[str] = None
     region: GoaRegion
     # Approximate only — exact address never sent
-    approx_lat: Optional[float]
-    approx_lng: Optional[float]
+    approx_lat: Optional[float] = None
+    approx_lng: Optional[float] = None
     # Goa intelligence
-    beach_distance_km: Optional[float]
-    mopa_airport_km: Optional[float]
-    dabolim_airport_km: Optional[float]
+    beach_distance_km: Optional[float] = None
+    mopa_airport_km: Optional[float] = None
+    dabolim_airport_km: Optional[float] = None
 
-    tourist_density: Optional[str]
-    short_term_rental_potential: bool
-    connectivity_score: Optional[int]
+    tourist_density: Optional[str] = None
+    short_term_rental_potential: bool = False
+    connectivity_score: Optional[int] = None
     # Media
-    images: List[PropertyImageResponse]
-    property_video_url: Optional[str]
-    possession_status: Optional[PossessionStatus]
+    images: List[PropertyImageResponse] = []
+    property_video_url: Optional[str] = None
+    possession_status: Optional[PossessionStatus] = None
     
-    amenities: List[str]
-    nri_eligible: bool
-    fema_compliant: bool
-    is_featured: bool
-    view_count: int
+    amenities: Optional[List[str]] = None
+    nri_eligible: bool = True
+    fema_compliant: bool = True
+    is_featured: bool = False
+    view_count: int = 0
     created_at: datetime
 
     class Config:

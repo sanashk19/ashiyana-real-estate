@@ -1,8 +1,19 @@
-from pydantic import BaseModel, EmailStr
+import re
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 from app.models.models import LeadStatus, SubmissionStatus, PropertyType, ListingType
+
+
+def validate_phone_number(v: str) -> str:
+    if not v or not isinstance(v, str):
+        raise ValueError("Phone number is required.")
+    cleaned = re.sub(r"[\s\-\(\)\.]", "", v.strip())
+    # Must contain only digits and optional leading plus, between 7 and 15 digits
+    if not re.match(r"^\+?[0-9]{7,15}$", cleaned):
+        raise ValueError("Please provide a valid phone number with digits (e.g. +91 95112 93464 or 9876543210). Alphabets are not allowed.")
+    return v.strip()
 
 
 # ── Enquiry (buyer inquiry — routes through broker always) ────────────────────
@@ -16,6 +27,11 @@ class EnquiryCreate(BaseModel):
     is_nri: bool = False
     budget: Optional[float] = None
 
+    @field_validator("buyer_phone")
+    @classmethod
+    def validate_buyer_phone(cls, v: str) -> str:
+        return validate_phone_number(v)
+
 
 class EnquiryBrokerUpdate(BaseModel):
     """Broker updates lead status, adds notes, sets follow-up."""
@@ -28,16 +44,17 @@ class EnquiryBrokerUpdate(BaseModel):
 class EnquiryOut(BaseModel):
     id: UUID
     property_id: UUID
+    property_title: Optional[str] = None
     buyer_name: str
     buyer_phone: str
-    buyer_email: Optional[str]
-    message: Optional[str]
+    buyer_email: Optional[str] = None
+    message: Optional[str] = None
     is_nri: bool
-    budget: Optional[float]
+    budget: Optional[float] = None
     source: str
     status: LeadStatus
-    broker_notes: Optional[str]
-    follow_up_date: Optional[datetime]
+    broker_notes: Optional[str] = None
+    follow_up_date: Optional[datetime] = None
     address_revealed: bool
     created_at: datetime
 
@@ -60,6 +77,11 @@ class SellerSubmissionCreate(BaseModel):
     description: Optional[str] = None
     # Photos uploaded separately via /upload endpoint, URLs passed here
     submitted_photos: List[str] = []
+
+    @field_validator("seller_phone")
+    @classmethod
+    def validate_seller_phone(cls, v: str) -> str:
+        return validate_phone_number(v)
 
 
 class SellerSubmissionBrokerUpdate(BaseModel):
