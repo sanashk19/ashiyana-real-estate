@@ -36,6 +36,7 @@ class EnquiryCreate(BaseModel):
 class EnquiryBrokerUpdate(BaseModel):
     """Broker updates lead status, adds notes, sets follow-up."""
     status: Optional[LeadStatus] = None
+    is_archived: Optional[bool] = None
     broker_notes: Optional[str] = None
     follow_up_date: Optional[datetime] = None
     address_revealed: Optional[bool] = None  # broker explicitly unlocks address for this buyer
@@ -53,6 +54,7 @@ class EnquiryOut(BaseModel):
     budget: Optional[float] = None
     source: str
     status: LeadStatus
+    is_archived: bool = False
     broker_notes: Optional[str] = None
     follow_up_date: Optional[datetime] = None
     address_revealed: bool

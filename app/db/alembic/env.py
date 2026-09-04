@@ -3,6 +3,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 import os, sys
 
+sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, "/app")
 
 from app.db.database import Base

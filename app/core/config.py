@@ -22,11 +22,6 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str
     CLOUDINARY_API_SECRET: str
 
-    # Twilio
-    TWILIO_ACCOUNT_SID: str
-    TWILIO_AUTH_TOKEN: str
-    TWILIO_WHATSAPP_FROM: str
-
     # App
     APP_NAME: str = "Ashiyana Buy Sell Rent"
     FRONTEND_URL: str = "http://localhost:3000"
@@ -34,6 +29,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 @lru_cache()

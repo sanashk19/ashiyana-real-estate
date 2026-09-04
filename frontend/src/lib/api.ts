@@ -19,8 +19,11 @@ apiClient.interceptors.request.use((config) => {
     const isSellerReq = config.url?.includes("/seller");
     const sellerToken = localStorage.getItem("ashiyana_seller_token");
     const brokerToken = localStorage.getItem("ashiyana_token");
+    const userToken = localStorage.getItem("ashiyana_user_token");
 
-    const token = isSellerReq ? (sellerToken || brokerToken) : (brokerToken || sellerToken);
+    const token = isSellerReq
+      ? (sellerToken || userToken || brokerToken)
+      : (userToken || sellerToken || brokerToken);
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -45,6 +48,34 @@ export function clearAuthToken(): void {
     localStorage.removeItem("ashiyana_token");
     localStorage.removeItem("ashiyana_user");
   }
+}
+
+// ─── Buyer / User Auth Storage ────────────────────────────────────────────────
+export function getUserAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("ashiyana_user_token");
+}
+
+export function setUserAuthToken(token: string): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("ashiyana_user_token", token);
+  }
+}
+
+export function clearUserAuthToken(): void {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("ashiyana_user_token");
+    localStorage.removeItem("ashiyana_user_profile");
+  }
+}
+
+export function getActiveAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return (
+    localStorage.getItem("ashiyana_user_token") ||
+    localStorage.getItem("ashiyana_seller_token") ||
+    localStorage.getItem("ashiyana_token")
+  );
 }
 
 // ─── Seller Auth Storage ──────────────────────────────────────────────────────
@@ -78,6 +109,27 @@ export async function loginBroker(email: string, password: string): Promise<Auth
   });
   if (response.data.access_token) {
     setAuthToken(response.data.access_token);
+  }
+  return response.data;
+}
+
+export async function loginUser(data: { email: string; password: string }): Promise<AuthTokens> {
+  const response = await apiClient.post<AuthTokens>("/auth/login", data);
+  if (response.data.access_token) {
+    setUserAuthToken(response.data.access_token);
+  }
+  return response.data;
+}
+
+export async function registerUser(data: {
+  full_name: string;
+  email: string;
+  phone?: string;
+  password: string;
+}): Promise<AuthTokens> {
+  const response = await apiClient.post<AuthTokens>("/auth/register", data);
+  if (response.data.access_token) {
+    setUserAuthToken(response.data.access_token);
   }
   return response.data;
 }
@@ -574,6 +626,7 @@ export interface EnquiryDto {
   budget?: number | null;
   source: string;
   status: LeadStatus;
+  is_archived: boolean;
   broker_notes?: string | null;
   follow_up_date?: string | null;
   address_revealed: boolean;
@@ -592,6 +645,7 @@ export interface EnquiryCreateDto {
 
 export interface EnquiryUpdateDto {
   status?: LeadStatus;
+  is_archived?: boolean;
   broker_notes?: string | null;
   follow_up_date?: string | null;
   address_revealed?: boolean;
@@ -601,6 +655,7 @@ export interface EnquiryFilterParams {
   status?: LeadStatus;
   property_id?: string;
   is_nri?: boolean;
+  is_archived?: boolean;
   skip?: number;
   limit?: number;
 }
@@ -643,6 +698,30 @@ export async function updateEnquiry(
   const response = await apiClient.patch<{ message: string; id: string }>(
     `/enquiries/${enquiryId}`,
     data
+  );
+  return response.data;
+}
+
+/**
+ * Soft-delete / Archive an enquiry via PATCH /api/enquiries/{id}/archive
+ */
+export async function archiveEnquiry(
+  enquiryId: string
+): Promise<{ message: string; id: string; is_archived: boolean }> {
+  const response = await apiClient.patch<{ message: string; id: string; is_archived: boolean }>(
+    `/enquiries/${enquiryId}/archive`
+  );
+  return response.data;
+}
+
+/**
+ * Restore an archived enquiry to active CRM board via PATCH /api/enquiries/{id}/unarchive
+ */
+export async function unarchiveEnquiry(
+  enquiryId: string
+): Promise<{ message: string; id: string; is_archived: boolean }> {
+  const response = await apiClient.patch<{ message: string; id: string; is_archived: boolean }>(
+    `/enquiries/${enquiryId}/unarchive`
   );
   return response.data;
 }
@@ -928,33 +1007,117 @@ export async function fetchSellerProperties(): Promise<SellerListedPropertyDto[]
   return response.data;
 }
 
-/**
- * Fetch all private documents uploaded by the logged-in seller from GET /api/seller/documents
- */
-export async function fetchSellerDocuments(): Promise<SellerDocumentDto[]> {
-  const response = await apiClient.get<SellerDocumentDto[]>("/seller/documents");
+// ─── Broker Deals & Deal Document Vault APIs ─────────────────────────────────
+
+export type DealStatus = "inquiry" | "negotiation" | "agreement" | "completed" | "cancelled";
+export type DocumentCategory = "property" | "seller" | "buyer" | "legal" | "financial" | "other";
+
+export interface DealPropertyInfoDto {
+  id: string;
+  title: string;
+  locality: string;
+  price: number;
+  property_type: string;
+  thumbnail_url?: string | null;
+}
+
+export interface DealDocumentDto {
+  id: string;
+  deal_id: string;
+  category: DocumentCategory;
+  title: string;
+  original_filename: string;
+  resource_type: string;
+  mime_type: string;
+  file_size: number;
+  created_at: string;
+  updated_at: string;
+  download_url?: string;
+}
+
+export interface DealDto {
+  id: string;
+  deal_number: string;
+  property_id?: string | null;
+  property?: DealPropertyInfoDto | null;
+  seller_name?: string | null;
+  buyer_name?: string | null;
+  status: DealStatus;
+  notes?: string | null;
+  document_count: number;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string | null;
+}
+
+export interface DealDetailDto extends DealDto {
+  documents: DealDocumentDto[];
+}
+
+export interface DealListResponseDto {
+  total: number;
+  deals: DealDto[];
+}
+
+export interface CreateDealDto {
+  property_id?: string | null;
+  seller_name?: string | null;
+  buyer_name?: string | null;
+  status?: DealStatus;
+  notes?: string | null;
+}
+
+export interface UpdateDealDto {
+  property_id?: string | null;
+  seller_name?: string | null;
+  buyer_name?: string | null;
+  status?: DealStatus;
+  notes?: string | null;
+  closed_at?: string | null;
+}
+
+export async function fetchDeals(params?: {
+  status?: DealStatus;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<DealListResponseDto> {
+  const response = await apiClient.get<DealListResponseDto>("/broker/deals", { params });
   return response.data;
 }
 
-/**
- * Upload a document to the seller's secure private vault via POST /api/seller/documents/upload
- */
-export async function uploadSellerDocument(
-  file: File,
-  title: string,
-  docType: string,
-  submissionId?: string
-): Promise<{ message: string; document: SellerDocumentDto }> {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("title", title);
-  formData.append("doc_type", docType);
-  if (submissionId) {
-    formData.append("submission_id", submissionId);
-  }
+export async function fetchDeal(dealId: string): Promise<DealDetailDto> {
+  const response = await apiClient.get<DealDetailDto>(`/broker/deals/${dealId}`);
+  return response.data;
+}
 
-  const response = await apiClient.post<{ message: string; document: SellerDocumentDto }>(
-    "/seller/documents/upload",
+export async function createDeal(payload: CreateDealDto): Promise<DealDto> {
+  const response = await apiClient.post<DealDto>("/broker/deals", payload);
+  return response.data;
+}
+
+export async function updateDeal(dealId: string, payload: UpdateDealDto): Promise<DealDto> {
+  const response = await apiClient.put<DealDto>(`/broker/deals/${dealId}`, payload);
+  return response.data;
+}
+
+export async function deleteDeal(dealId: string): Promise<void> {
+  await apiClient.delete(`/broker/deals/${dealId}`);
+}
+
+export async function uploadDealDocument(
+  dealId: string,
+  title: string,
+  category: DocumentCategory,
+  file: File
+): Promise<{ message: string; document: DealDocumentDto }> {
+  const formData = new FormData();
+  formData.append("title", title);
+  formData.append("category", category);
+  formData.append("file", file);
+
+  const response = await apiClient.post<{ message: string; document: DealDocumentDto }>(
+    `/broker/deals/${dealId}/documents`,
     formData,
     {
       headers: {
@@ -965,11 +1128,18 @@ export async function uploadSellerDocument(
   return response.data;
 }
 
-/**
- * Download a private document with server-side authorization check from GET /api/seller/documents/{id}/download
- */
-export async function downloadSellerDocumentBlob(docId: string, filename: string): Promise<void> {
-  const response = await apiClient.get(`/seller/documents/${docId}/download`, {
+export async function fetchDealDocuments(
+  dealId: string,
+  category?: DocumentCategory
+): Promise<DealDocumentDto[]> {
+  const response = await apiClient.get<DealDocumentDto[]>(`/broker/deals/${dealId}/documents`, {
+    params: category ? { category } : undefined,
+  });
+  return response.data;
+}
+
+export async function downloadDealDocument(documentId: string, filename: string): Promise<void> {
+  const response = await apiClient.get(`/broker/documents/${documentId}/download`, {
     responseType: "blob",
   });
   const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -982,12 +1152,8 @@ export async function downloadSellerDocumentBlob(docId: string, filename: string
   window.URL.revokeObjectURL(url);
 }
 
-/**
- * Delete a private document via DELETE /api/seller/documents/{id}
- */
-export async function deleteSellerDocument(docId: string): Promise<{ message: string }> {
-  const response = await apiClient.delete<{ message: string }>(`/seller/documents/${docId}`);
-  return response.data;
+export async function deleteDealDocument(documentId: string): Promise<void> {
+  await apiClient.delete(`/broker/documents/${documentId}`);
 }
 
 // ─── Broker Seller CRM Management APIs ────────────────────────────────────────
@@ -1049,5 +1215,153 @@ export async function fetchBrokerSellerDetail(sellerId: string): Promise<BrokerS
   return response.data;
 }
 
+/**
+ * Broker fetches private seller legal documents associated with a property from GET /api/broker/properties/{propertyId}/seller-documents
+ */
+export async function fetchPropertySellerDocuments(
+  propertyId: string
+): Promise<SellerDocumentDto[]> {
+  const response = await apiClient.get<SellerDocumentDto[]>(
+    `/broker/properties/${propertyId}/seller-documents`
+  );
+  return response.data;
+}
 
+// ─── Broker AI Valuation Estimator APIs ──────────────────────────────────────
+
+export interface ValuationRequestDto {
+  locality: string;
+  area_sqft: number;
+  property_type: string;
+  bedrooms?: number;
+  age_years?: number;
+  beach_distance_km?: number;
+  mopa_airport_km?: number;
+  floor_number?: number;
+  region?: string;
+  furnished?: string;
+  property_id?: string;
+  submission_id?: string;
+}
+
+export interface ValuationResultDto {
+  estimated_low: number;
+  estimated_mid: number;
+  estimated_high: number;
+  price_per_sqft_approx: number;
+  confidence_score: number;
+  locality_known: boolean;
+  note: string;
+}
+
+export interface ValuationHistoryItemDto {
+  id: string;
+  locality: string;
+  area_sqft: number;
+  property_type: string;
+  estimated_low: number;
+  estimated_mid: number;
+  estimated_high: number;
+  confidence_score: number;
+  created_at: string;
+}
+
+/**
+ * Estimate property market valuation range (Broker only) from POST /api/broker/estimate-price
+ */
+export async function estimatePropertyPrice(
+  data: ValuationRequestDto
+): Promise<ValuationResultDto> {
+  const response = await apiClient.post<ValuationResultDto>(
+    "/broker/estimate-price",
+    data
+  );
+  return response.data;
+}
+
+/**
+ * Fetch past valuation history log (Broker only) from GET /api/broker/valuation-history
+ */
+export async function fetchValuationHistory(): Promise<ValuationHistoryItemDto[]> {
+  const response = await apiClient.get<ValuationHistoryItemDto[]>(
+    "/broker/valuation-history"
+  );
+  return response.data;
+}
+
+// ─── Buyer Saved Properties / Bookmarks APIs ──────────────────────────────────
+
+/**
+ * Save / bookmark a property to current user's profile via POST /api/properties/{id}/save
+ */
+export async function saveProperty(propertyId: string): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>(
+    `/properties/${propertyId}/save`
+  );
+  return response.data;
+}
+
+/**
+ * Remove a property from current user's bookmarks via DELETE /api/properties/{id}/save
+ */
+export async function unsaveProperty(propertyId: string): Promise<{ message: string }> {
+  const response = await apiClient.delete<{ message: string }>(
+    `/properties/${propertyId}/save`
+  );
+  return response.data;
+}
+
+/**
+ * Fetch all properties bookmarked by the currently authenticated user from GET /api/properties/saved/mine
+ */
+export async function fetchMySavedProperties(): Promise<PropertyCardDto[]> {
+  const response = await apiClient.get<PropertyCardDto[]>(
+    "/properties/saved/mine"
+  );
+  return response.data;
+}
+
+// ─── Broker Watcher Intelligence ──────────────────────────────────────────────
+
+export interface PropertyWatcherItemDto {
+  user_id: string;
+  saved_at: string;
+  buyer_name?: string | null;
+  buyer_email?: string | null;
+  buyer_phone?: string | null;
+  is_nri?: boolean;
+}
+
+export interface PropertyWatcherSummaryDto {
+  property_id: string;
+  watcher_count: number;
+}
+
+/**
+ * Broker Lead Intelligence: Fetch buyers who saved a specific property
+ * GET /api/properties/{propertyId}/watchers
+ */
+export async function fetchPropertyWatchers(propertyId: string): Promise<PropertyWatcherItemDto[]> {
+  const token = getBrokerAuthToken();
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await apiClient.get<PropertyWatcherItemDto[]>(
+    `/properties/${propertyId}/watchers`,
+    { headers }
+  );
+  return response.data;
+}
+
+/**
+ * Broker Lead Intelligence: Bulk watcher summary for all properties
+ * GET /api/broker/properties/watcher-summary
+ */
+export async function fetchPropertyWatcherSummary(): Promise<PropertyWatcherSummaryDto[]> {
+  const token = getBrokerAuthToken();
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await apiClient.get<PropertyWatcherSummaryDto[]>(
+    "/broker/properties/watcher-summary",
+    { headers }
+  );
+  return response.data;
+}
 

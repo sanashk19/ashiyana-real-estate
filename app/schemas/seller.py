@@ -119,6 +119,6 @@ class SellerDashboardStats(BaseModel):
     total_submissions: int
     pending_submissions: int
     listed_properties: int
-    total_documents: int
+    total_documents: int = 0
     seller_name: str
     seller_email: str

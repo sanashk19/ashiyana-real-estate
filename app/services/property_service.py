@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 from uuid import UUID
 from typing import List, Tuple
 
-from app.models.models import Property, PropertyStatus, SavedProperty, PropertyImage
+from app.models.models import Property, PropertyStatus, SavedProperty, PropertyImage, User
 from app.schemas.properties import (
     PropertyCreate,
     PropertyUpdate,
@@ -196,11 +196,23 @@ class PropertyService:
         Lead intelligence — who is watching what.
         """
         result = await db.execute(
-            select(SavedProperty)
+            select(SavedProperty, User)
+            .join(User, SavedProperty.user_id == User.id)
             .where(SavedProperty.property_id == property_id)
             .order_by(SavedProperty.saved_at.desc())
         )
-        return result.scalars().all()
+        rows = result.all()
+        return [
+            {
+                "user_id": sp.user_id,
+                "saved_at": sp.saved_at,
+                "buyer_name": user.full_name,
+                "buyer_email": user.email,
+                "buyer_phone": user.phone,
+                "is_nri": user.is_nri,
+            }
+            for sp, user in rows
+        ]
 
     @staticmethod
     async def add_images(

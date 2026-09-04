@@ -76,6 +76,23 @@ class SubmissionStatus(str, PyEnum):
     listed = "listed"
 
 
+class DealStatus(str, PyEnum):
+    inquiry = "inquiry"
+    negotiation = "negotiation"
+    agreement = "agreement"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
+class DocumentCategory(str, PyEnum):
+    property = "property"
+    seller = "seller"
+    buyer = "buyer"
+    legal = "legal"
+    financial = "financial"
+    other = "other"
+
+
 class GoaRegion(str, PyEnum):
     north_goa = "north_goa"
     south_goa = "south_goa"
@@ -114,7 +131,6 @@ class User(Base):
     enquiries = relationship("Enquiry", back_populates="user", cascade="all, delete-orphan")
     saved_properties = relationship("SavedProperty", back_populates="user", cascade="all, delete-orphan")
     seller_submissions = relationship("SellerSubmission", back_populates="user")
-    documents = relationship("SellerDocument", back_populates="user", cascade="all, delete-orphan")
 
 
 class Property(Base):
@@ -213,6 +229,7 @@ class Property(Base):
     enquiries = relationship("Enquiry", back_populates="property", cascade="all, delete-orphan")
     documents = relationship("PropertyDocument", back_populates="property", cascade="all, delete-orphan")
     saved_by = relationship("SavedProperty", back_populates="property", cascade="all, delete-orphan")
+    deals = relationship("Deal", back_populates="property", cascade="all, delete-orphan")
 
 
 class Enquiry(Base):
@@ -237,6 +254,7 @@ class Enquiry(Base):
 
     # Lead management
     status = Column(SQLEnum(LeadStatus, values_callable=lambda x: [e.value for e in x], native_enum=False, length=30), default=LeadStatus.new)
+    is_archived = Column(Boolean, default=False, nullable=False, index=True)
     broker_notes = Column(Text, nullable=True)
     follow_up_date = Column(DateTime(timezone=True), nullable=True)
     address_revealed = Column(Boolean, default=False)  # broker explicitly unlocks
@@ -291,34 +309,60 @@ class SellerSubmission(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="seller_submissions")
-    seller_documents = relationship("SellerDocument", back_populates="submission")
 
 
-class SellerDocument(Base):
+class Deal(Base):
     """
-    Secure Document Vault for registered property sellers.
-    Strictly private - accessible only by the owning seller and verified broker.
-    Files are stored in private server storage (uploads/secure_documents/).
+    Broker Deal Management.
+    Tracks transactions from inquiry through completion with associated property,
+    buyer, seller, status, and private document vault.
     """
-    __tablename__ = "seller_documents"
+    __tablename__ = "deals"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    submission_id = Column(UUID(as_uuid=True), ForeignKey("seller_submissions.id"), nullable=True, index=True)
+    deal_number = Column(String(50), unique=True, nullable=False, index=True)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=True, index=True)
+    seller_name = Column(String(255), nullable=True)
+    buyer_name = Column(String(255), nullable=True)
+    status = Column(
+        SQLEnum(DealStatus, values_callable=lambda x: [e.value for e in x], native_enum=False, length=30),
+        default=DealStatus.inquiry,
+        nullable=False,
+        index=True,
+    )
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
 
+    property = relationship("Property", back_populates="deals")
+    documents = relationship("DealDocument", back_populates="deal", cascade="all, delete-orphan")
+
+
+class DealDocument(Base):
+    """
+    Private Broker Deal Documents stored in authenticated Cloudinary storage.
+    Strictly private - accessible only by the verified broker.
+    """
+    __tablename__ = "deal_documents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    deal_id = Column(UUID(as_uuid=True), ForeignKey("deals.id"), nullable=False, index=True)
+    category = Column(
+        SQLEnum(DocumentCategory, values_callable=lambda x: [e.value for e in x], native_enum=False, length=30),
+        nullable=False,
+        index=True,
+    )
     title = Column(String(255), nullable=False)
-    doc_type = Column(String(100), nullable=False, default="other")  # sale_deed, title_document, tax_receipt, encumbrance_cert, id_proof, address_proof, other
-    file_path = Column(String(500), nullable=False)
     original_filename = Column(String(255), nullable=False)
-    file_size = Column(Integer, nullable=False, default=0)
+    cloudinary_public_id = Column(String(500), nullable=False)
+    resource_type = Column(String(50), nullable=False, default="raw")
     mime_type = Column(String(100), nullable=False, default="application/octet-stream")
+    file_size = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    # Relationships
-    user = relationship("User", back_populates="documents")
-    submission = relationship("SellerSubmission", back_populates="seller_documents")
+    deal = relationship("Deal", back_populates="documents")
 
 
 class PropertyDocument(Base):

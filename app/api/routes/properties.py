@@ -13,7 +13,7 @@ from app.schemas.properties import (
     PropertyCreate, PropertyUpdate, PropertyFilters,
     PropertyPublic, PropertyBroker, PropertyCard,
     PropertyImageResponse, PropertyImageCreate, PropertyImageBatchCreate,
-    PropertyImageReorderRequest,
+    PropertyImageReorderRequest, PropertyWatcherItem,
 )
 from app.services.property_service import PropertyService
 
@@ -196,7 +196,7 @@ async def unsave_property(
 
 # ── Broker only: see who's watching a property ────────────────────────────────
 
-@router.get("/{property_id}/watchers", response_model=list)
+@router.get("/{property_id}/watchers", response_model=List[PropertyWatcherItem])
 async def property_watchers(
     property_id: UUID,
     broker: User = Depends(require_broker),
@@ -206,11 +206,7 @@ async def property_watchers(
     Lead intelligence: which registered buyers saved this property.
     Broker-only endpoint.
     """
-    watchers = await PropertyService.get_watchers(db, property_id)
-    return [
-        {"user_id": str(w.user_id), "saved_at": w.saved_at.isoformat()}
-        for w in watchers
-    ]
+    return await PropertyService.get_watchers(db, property_id)
 
 
 import os

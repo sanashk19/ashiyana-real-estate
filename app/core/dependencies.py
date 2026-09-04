@@ -81,7 +81,7 @@ def require_seller(current_user: User = Depends(get_current_user)) -> User:
     """
     Dependency that ensures authenticated user is a registered seller or broker.
     """
-    if current_user.role not in (UserRole.seller, UserRole.user, UserRole.broker):
+    if current_user.role not in (UserRole.seller, UserRole.broker):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Seller account required",

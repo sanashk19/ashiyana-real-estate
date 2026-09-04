@@ -64,13 +64,14 @@ async def list_enquiries(
     status: Optional[LeadStatus] = None,
     property_id: Optional[UUID] = None,
     is_nri: Optional[bool] = None,
+    is_archived: bool = Query(default=False),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     broker: User = Depends(require_broker),
     db: AsyncSession = Depends(get_db),
 ):
-    """Broker CRM — all leads with filters."""
-    conditions = []
+    """Broker CRM — leads with filters. Default returns active (non-archived) leads."""
+    conditions = [Enquiry.is_archived == is_archived]
     if status:
         conditions.append(Enquiry.status == status)
     if property_id:
@@ -115,7 +116,50 @@ async def update_enquiry(
     for key, value in update_data.items():
         setattr(enquiry, key, value)
 
+    await db.commit()
+    await db.refresh(enquiry)
+
     return {"message": "Enquiry updated", "id": str(enquiry_id)}
+
+
+@router.patch("/enquiries/{enquiry_id}/archive", response_model=dict)
+async def archive_enquiry(
+    enquiry_id: UUID,
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Broker soft-deletes/archives an enquiry to clean the active CRM board without data loss.
+    """
+    result = await db.execute(select(Enquiry).where(Enquiry.id == enquiry_id))
+    enquiry = result.scalar_one_or_none()
+    if not enquiry:
+        raise HTTPException(status_code=404, detail="Enquiry not found")
+
+    enquiry.is_archived = True
+    await db.commit()
+
+    return {"message": "Enquiry archived successfully", "id": str(enquiry_id), "is_archived": True}
+
+
+@router.patch("/enquiries/{enquiry_id}/unarchive", response_model=dict)
+async def unarchive_enquiry(
+    enquiry_id: UUID,
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Broker restores an archived enquiry back to the active CRM board.
+    """
+    result = await db.execute(select(Enquiry).where(Enquiry.id == enquiry_id))
+    enquiry = result.scalar_one_or_none()
+    if not enquiry:
+        raise HTTPException(status_code=404, detail="Enquiry not found")
+
+    enquiry.is_archived = False
+    await db.commit()
+
+    return {"message": "Enquiry restored to active CRM", "id": str(enquiry_id), "is_archived": False}
 
 
 @router.get("/enquiries/stats/summary", response_model=dict)
@@ -123,11 +167,12 @@ async def enquiry_stats(
     broker: User = Depends(require_broker),
     db: AsyncSession = Depends(get_db),
 ):
-    """Dashboard summary stats for broker home screen."""
+    """Dashboard summary stats for active leads (excludes archived)."""
     from sqlalchemy import func
 
     result = await db.execute(
         select(Enquiry.status, func.count(Enquiry.id))
+        .where(Enquiry.is_archived == False)
         .group_by(Enquiry.status)
     )
     stats = {row[0].value: row[1] for row in result.all()}

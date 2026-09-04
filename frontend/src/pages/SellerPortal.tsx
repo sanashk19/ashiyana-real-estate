@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import React, { useState, useEffect } from "react";
+import { Link, useSearchParams } from "react-router";
 import {
   LayoutDashboard,
   FileText,
@@ -7,28 +7,19 @@ import {
   ShieldCheck,
   User,
   LogOut,
-  UploadCloud,
-  Download,
-  Trash2,
   Plus,
   Eye,
   EyeOff,
   AlertCircle,
-  CheckCircle2,
   Clock,
   ChevronRight,
   Menu,
   X,
-  File,
   Building2,
-  Calendar,
-  IndianRupee,
-  MapPin,
   Sparkles,
 } from "lucide-react";
 import {
   getSellerAuthToken,
-  setSellerAuthToken,
   clearSellerAuthToken,
   loginSeller,
   registerSeller,
@@ -36,12 +27,7 @@ import {
   fetchSellerDashboardStats,
   fetchSellerSubmissions,
   fetchSellerProperties,
-  fetchSellerDocuments,
-  uploadSellerDocument,
-  downloadSellerDocumentBlob,
-  deleteSellerDocument,
   SellerDashboardStatsDto,
-  SellerDocumentDto,
   SellerListedPropertyDto,
   SellerSubmissionDto,
   UserProfileDto,
@@ -52,20 +38,9 @@ import { AshiyanaLogo, GREEN } from "@/lib/shared";
 import { SiteNavbar } from "@/components/SiteNavbar";
 import { SiteFooter } from "@/components/SiteFooter";
 
-type SellerTab = "overview" | "submissions" | "properties" | "documents" | "profile";
-
-const DOC_TYPE_LABELS: Record<string, string> = {
-  sale_deed: "Sale Deed",
-  title_document: "Title Document",
-  tax_receipt: "Tax Receipt",
-  encumbrance_cert: "Encumbrance Certificate",
-  id_proof: "ID Proof",
-  address_proof: "Address Proof",
-  other: "Other Property Document",
-};
+type SellerTab = "overview" | "submissions" | "properties" | "profile";
 
 export default function SellerPortalPage() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialMode = searchParams.get("mode") === "register" ? "register" : "login";
 
@@ -78,7 +53,6 @@ export default function SellerPortalPage() {
   const [authMode, setAuthMode] = useState<"login" | "register">(initialMode);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -93,20 +67,6 @@ export default function SellerPortalPage() {
   const [stats, setStats] = useState<SellerDashboardStatsDto | null>(null);
   const [submissions, setSubmissions] = useState<SellerSubmissionDto[]>([]);
   const [properties, setProperties] = useState<SellerListedPropertyDto[]>([]);
-  const [documents, setDocuments] = useState<SellerDocumentDto[]>([]);
-  const [dataLoading, setDataLoading] = useState(false);
-
-  // Document Upload State
-  const [uploadDocTitle, setUploadDocTitle] = useState("");
-  const [uploadDocType, setUploadDocType] = useState("sale_deed");
-  const [selectedDocFile, setSelectedDocFile] = useState<File | null>(null);
-  const [uploadingDoc, setUploadingDoc] = useState(false);
-  const [uploadDocError, setUploadDocError] = useState<string | null>(null);
-  const [uploadDocSuccess, setUploadDocSuccess] = useState<string | null>(null);
-
-  // Document Delete State
-  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
-  const [deleteDocLoading, setDeleteDocLoading] = useState(false);
 
   // Initial Load & Auth Check
   useEffect(() => {
@@ -127,17 +87,15 @@ export default function SellerPortalPage() {
   const loadSellerData = async () => {
     setDataLoading(true);
     try {
-      const [statsRes, subsRes, propsRes, docsRes] = await Promise.allSettled([
+      const [statsRes, subsRes, propsRes] = await Promise.allSettled([
         fetchSellerDashboardStats(),
         fetchSellerSubmissions(),
         fetchSellerProperties(),
-        fetchSellerDocuments(),
       ]);
 
       if (statsRes.status === "fulfilled") setStats(statsRes.value);
       if (subsRes.status === "fulfilled") setSubmissions(subsRes.value);
       if (propsRes.status === "fulfilled") setProperties(propsRes.value);
-      if (docsRes.status === "fulfilled") setDocuments(docsRes.value);
     } catch (err) {
       console.error("Error loading seller data:", err);
     } finally {
@@ -203,67 +161,7 @@ export default function SellerPortalPage() {
     setStats(null);
     setSubmissions([]);
     setProperties([]);
-    setDocuments([]);
     setActiveTab("overview");
-  };
-
-  // Document Upload Handler
-  const handleUploadDocumentSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDocFile) {
-      setUploadDocError("Please select a file to upload.");
-      return;
-    }
-    setUploadDocError(null);
-    setUploadDocSuccess(null);
-    setUploadingDoc(true);
-
-    try {
-      const res = await uploadSellerDocument(
-        selectedDocFile,
-        uploadDocTitle.trim() || selectedDocFile.name,
-        uploadDocType
-      );
-      setDocuments((prev) => [res.document, ...prev]);
-      if (stats) {
-        setStats({ ...stats, total_documents: stats.total_documents + 1 });
-      }
-      setUploadDocSuccess("Document uploaded securely to your private vault.");
-      setUploadDocTitle("");
-      setSelectedDocFile(null);
-      setTimeout(() => setUploadDocSuccess(null), 4000);
-    } catch (err: any) {
-      setUploadDocError(getApiErrorMessage(err, "Could not upload document. Please ensure it is under 25MB."));
-    } finally {
-      setUploadingDoc(false);
-    }
-  };
-
-  // Document Download Handler
-  const handleDownloadDoc = async (doc: SellerDocumentDto) => {
-    try {
-      await downloadSellerDocumentBlob(doc.id, doc.original_filename);
-    } catch (err: any) {
-      alert(getApiErrorMessage(err, "Could not download document. Access denied or file missing."));
-    }
-  };
-
-  // Document Delete Handler
-  const handleDeleteDocConfirm = async () => {
-    if (!deletingDocId) return;
-    setDeleteDocLoading(true);
-    try {
-      await deleteSellerDocument(deletingDocId);
-      setDocuments((prev) => prev.filter((d) => d.id !== deletingDocId));
-      if (stats) {
-        setStats({ ...stats, total_documents: Math.max(0, stats.total_documents - 1) });
-      }
-      setDeletingDocId(null);
-    } catch (err: any) {
-      alert(getApiErrorMessage(err, "Could not delete document."));
-    } finally {
-      setDeleteDocLoading(false);
-    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -286,8 +184,8 @@ export default function SellerPortalPage() {
               </h1>
               <p className="text-[14px] text-[#172023]/60 max-w-[380px]">
                 {authMode === "login"
-                  ? "Access your property submissions, listing statuses, and private legal document vault."
-                  : "Register as a verified property owner in Goa to track submissions and securely upload documents."}
+                  ? "Access your property submissions and listing statuses."
+                  : "Register as a verified property owner in Goa to track property submissions."}
               </p>
             </div>
 
@@ -487,7 +385,6 @@ export default function SellerPortalPage() {
               { id: "overview", label: "Overview", icon: LayoutDashboard },
               { id: "submissions", label: "My Submissions", icon: FileText, badge: submissions.length },
               { id: "properties", label: "My Properties", icon: Home, badge: properties.length },
-              { id: "documents", label: "Document Vault", icon: ShieldCheck, badge: documents.length },
               { id: "profile", label: "Profile", icon: User },
             ].map(({ id, label, icon: Icon, badge }) => (
               <button
@@ -558,7 +455,6 @@ export default function SellerPortalPage() {
               { id: "overview", label: "Overview", icon: LayoutDashboard },
               { id: "submissions", label: "My Submissions", icon: FileText, badge: submissions.length },
               { id: "properties", label: "My Properties", icon: Home, badge: properties.length },
-              { id: "documents", label: "Document Vault", icon: ShieldCheck, badge: documents.length },
               { id: "profile", label: "Profile & Settings", icon: User },
             ].map(({ id, label, icon: Icon, badge }) => (
               <button
@@ -620,18 +516,11 @@ export default function SellerPortalPage() {
                   {userProfile.full_name}
                 </h2>
                 <p className="text-[14px] text-[#172023]/60 max-w-[540px]">
-                  Manage your property submissions in Goa, track broker listing approvals, and securely manage your ownership deeds.
+                  Manage your property submissions in Goa and track broker listing approvals.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={() => setActiveTab("documents")}
-                  className="px-5 py-2.5 rounded-full border border-gray-300 text-[#172023] font-semibold text-[13.5px] hover:bg-gray-50 transition-colors flex items-center gap-2 cursor-pointer"
-                >
-                  <UploadCloud className="size-4 text-[#07be8a]" />
-                  <span>Upload Documents</span>
-                </button>
                 <Link
                   to="/sell"
                   className="px-5 py-2.5 rounded-full text-white font-semibold text-[13.5px] hover:opacity-95 transition-opacity flex items-center gap-2 shadow-2xs"
@@ -644,7 +533,7 @@ export default function SellerPortalPage() {
             </div>
 
             {/* Metrics Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
               {[
                 {
                   label: "Total Submissions",
@@ -666,13 +555,6 @@ export default function SellerPortalPage() {
                   icon: Home,
                   color: "#3b82f6",
                   bg: "bg-blue-50",
-                },
-                {
-                  label: "Secure Documents",
-                  value: stats?.total_documents ?? documents.length,
-                  icon: ShieldCheck,
-                  color: "#8b5cf6",
-                  bg: "bg-purple-50",
                 },
               ].map(({ label, value, icon: Icon, color, bg }, idx) => (
                 <div
@@ -975,186 +857,6 @@ export default function SellerPortalPage() {
           </div>
         )}
 
-        {/* ── TAB 4: DOCUMENT VAULT ─────────────────────────────────────────── */}
-        {activeTab === "documents" && (
-          <div className="flex flex-col gap-8 animate-in fade-in duration-200">
-            
-            {/* Header */}
-            <div>
-              <div className="flex items-center gap-2 text-[#07be8a] text-[13px] font-semibold">
-                <ShieldCheck className="size-4 text-[#07be8a]" />
-                <span>Encrypted Private Vault</span>
-              </div>
-              <h2 className="font-semibold text-[24px] text-[#172023]">
-                Property Document Vault
-              </h2>
-              <p className="text-[14px] text-[#172023]/60 max-w-[600px]">
-                Upload legal property deeds, ownership certificates, and tax receipts. Documents are strictly confidential and accessible only to you and Lead Broker Kassim Shaikh.
-              </p>
-            </div>
-
-            {/* Upload Box */}
-            <div className="bg-white rounded-[24px] border border-[#172023]/10 p-6 sm:p-8 shadow-2xs">
-              <h3 className="font-semibold text-[18px] text-[#172023] mb-4">
-                Upload Legal Document
-              </h3>
-
-              {uploadDocSuccess && (
-                <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-[13.5px] flex items-center gap-2">
-                  <CheckCircle2 className="size-4.5 text-[#07be8a]" />
-                  <span>{uploadDocSuccess}</span>
-                </div>
-              )}
-
-              {uploadDocError && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-[13.5px] flex items-center gap-2">
-                  <AlertCircle className="size-4.5 text-red-600" />
-                  <span>{uploadDocError}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleUploadDocumentSubmit} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="flex flex-col gap-1.5 sm:col-span-1">
-                  <label className="text-[12.5px] font-semibold uppercase tracking-wider text-[#172023]/70">
-                    Document Type *
-                  </label>
-                  <select
-                    value={uploadDocType}
-                    onChange={(e) => setUploadDocType(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-[#fcfdfe] text-[14px] text-[#172023] focus:outline-none focus:border-[#07be8a]"
-                  >
-                    <option value="sale_deed">Sale Deed</option>
-                    <option value="title_document">Title Document / 7/12 Extract</option>
-                    <option value="tax_receipt">House Tax / Municipality Receipt</option>
-                    <option value="encumbrance_cert">Encumbrance Certificate</option>
-                    <option value="id_proof">Seller ID Proof (Aadhaar/Passport)</option>
-                    <option value="address_proof">Address Proof</option>
-                    <option value="other">Other Property Document</option>
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1.5 sm:col-span-1">
-                  <label className="text-[12.5px] font-semibold uppercase tracking-wider text-[#172023]/70">
-                    Document Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={uploadDocTitle}
-                    onChange={(e) => setUploadDocTitle(e.target.value)}
-                    placeholder="e.g. Registered Sale Deed - Assagao Villa"
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-[#fcfdfe] text-[14px] text-[#172023] focus:outline-none focus:border-[#07be8a]"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5 sm:col-span-1">
-                  <label className="text-[12.5px] font-semibold uppercase tracking-wider text-[#172023]/70">
-                    Select File (PDF, PNG, JPG max 25MB) *
-                  </label>
-                  <input
-                    type="file"
-                    required
-                    accept=".pdf,.png,.jpg,.jpeg,.webp"
-                    onChange={(e) => setSelectedDocFile(e.target.files?.[0] || null)}
-                    className="w-full text-[13px] text-[#172023]/70 file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[12.5px] file:font-semibold file:bg-emerald-50 file:text-[#07be8a] hover:file:bg-emerald-100 cursor-pointer"
-                  />
-                </div>
-
-                <div className="sm:col-span-3 flex justify-end pt-2">
-                  <button
-                    type="submit"
-                    disabled={uploadingDoc}
-                    className="px-6 py-2.5 rounded-full text-white font-semibold text-[13.5px] shadow-sm hover:opacity-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
-                    style={{ backgroundColor: GREEN }}
-                  >
-                    <UploadCloud className="size-4" />
-                    <span>{uploadingDoc ? "Encrypting & Uploading..." : "Upload to Vault"}</span>
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {/* Documents List */}
-            <div className="bg-white rounded-[24px] border border-[#172023]/10 p-6 sm:p-8 shadow-2xs flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-[18px] text-[#172023]">
-                  Stored Documents ({documents.length})
-                </h3>
-              </div>
-
-              {documents.length === 0 ? (
-                <div className="py-12 border border-dashed border-gray-200 rounded-[18px] text-center flex flex-col items-center gap-2">
-                  <div className="size-12 rounded-full bg-gray-100 flex items-center justify-center text-[#172023]/40">
-                    <ShieldCheck className="size-6" />
-                  </div>
-                  <h4 className="font-semibold text-[16px] text-[#172023]">No documents in vault.</h4>
-                  <p className="text-[13.5px] text-[#172023]/50 max-w-[360px]">
-                    Uploaded documents are stored in an encrypted directory and accessible only with your verified seller session.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-[12px] uppercase font-bold text-[#172023]/50 tracking-wider">
-                        <th className="py-3 px-3">Document</th>
-                        <th className="py-3 px-3">Category</th>
-                        <th className="py-3 px-3">File Size</th>
-                        <th className="py-3 px-3">Uploaded Date</th>
-                        <th className="py-3 px-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 text-[13.5px]">
-                      {documents.map((doc) => (
-                        <tr key={doc.id} className="hover:bg-gray-50/70 transition-colors">
-                          <td className="py-3.5 px-3">
-                            <div className="flex items-center gap-2.5">
-                              <div className="size-8 rounded-lg bg-emerald-50 text-[#07be8a] flex items-center justify-center shrink-0">
-                                <File className="size-4 text-[#07be8a]" />
-                              </div>
-                              <div>
-                                <p className="font-semibold text-[#172023]" style={fv}>{doc.title}</p>
-                                <p className="text-[11.5px] text-[#172023]/40 truncate max-w-[200px]">{doc.original_filename}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-3 font-medium text-[#172023]/70">
-                            {DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type}
-                          </td>
-                          <td className="py-3.5 px-3 text-[#172023]/60">
-                            {(doc.file_size / 1024).toFixed(1)} KB
-                          </td>
-                          <td className="py-3.5 px-3 text-[#172023]/60">
-                            {new Date(doc.created_at).toLocaleDateString()}
-                          </td>
-                          <td className="py-3.5 px-3 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleDownloadDoc(doc)}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-50 text-[#07be8a] hover:bg-emerald-100 font-semibold text-[12.5px] flex items-center gap-1.5 transition-colors cursor-pointer"
-                                title="Download Secure Document"
-                              >
-                                <Download className="size-3.5" />
-                                <span>Download</span>
-                              </button>
-                              <button
-                                onClick={() => setDeletingDocId(doc.id)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                                title="Delete Document"
-                              >
-                                <Trash2 className="size-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* ── TAB 5: PROFILE ────────────────────────────────────────────────── */}
         {activeTab === "profile" && (
@@ -1215,37 +917,6 @@ export default function SellerPortalPage() {
         )}
       </main>
 
-      {/* ─── Delete Confirmation Modal ────────────────────────────────────── */}
-      {deletingDocId && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-[24px] max-w-[420px] w-full p-6 flex flex-col gap-4 shadow-xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="size-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
-              <Trash2 className="size-6" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-[18px] text-[#172023]">Delete Document?</h3>
-              <p className="text-[13.5px] text-[#172023]/60 mt-1">
-                Are you sure you want to permanently delete this document from your secure vault?
-              </p>
-            </div>
-            <div className="flex items-center gap-3 mt-2">
-              <button
-                onClick={() => setDeletingDocId(null)}
-                className="flex-1 py-2.5 rounded-full border border-gray-200 text-[#172023] text-[13.5px] font-semibold hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteDocConfirm}
-                disabled={deleteDocLoading}
-                className="flex-1 py-2.5 rounded-full bg-red-600 text-white text-[13.5px] font-semibold hover:bg-red-700 disabled:opacity-50"
-              >
-                {deleteDocLoading ? "Deleting..." : "Confirm Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <SiteFooter />
     </div>

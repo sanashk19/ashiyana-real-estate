@@ -221,6 +221,19 @@ class PropertyCard(BaseModel):
         from_attributes = True
 
 
+class PropertyWatcherItem(BaseModel):
+    user_id: UUID
+    saved_at: datetime
+    buyer_name: Optional[str] = None
+    buyer_email: Optional[str] = None
+    buyer_phone: Optional[str] = None
+    is_nri: Optional[bool] = False
+
+    class Config:
+        from_attributes = True
+
+
+
 # ── Filters for search ────────────────────────────────────────────────────────
 
 class PropertyFilters(BaseModel):

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router";
 import { AshiyanaLogo } from "@/lib/shared";
 import { useBusinessProfile } from "@/context/BusinessProfileContext";
-import { X, Menu, Phone, MessageSquare, ArrowUpRight, PlusCircle } from "lucide-react";
+import { useSavedProperties } from "@/context/SavedPropertiesContext";
+import { X, Menu, Phone, MessageSquare, ArrowUpRight, Bookmark } from "lucide-react";
 
 type NavbarProps = {
   variant?: "hero" | "page";
@@ -12,11 +13,11 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
   const isHero = variant === "hero";
   const [menuOpen, setMenuOpen] = useState(false);
   const { profile } = useBusinessProfile();
+  const { savedProperties } = useSavedProperties();
   const location = useLocation();
   const phoneTel = `tel:${(profile?.phone || "+91 832 246 7890").replace(/\s+/g, "")}`;
 
-  // Exact 5 navigation items:
-  // HOME | PROPERTIES | SERVICES | SELL PROPERTY | CONTACT
+  // Navigation items
   const navLinks = [
     { to: "/", label: "Home" },
     { to: "/properties", label: "Properties" },
@@ -32,6 +33,8 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
     }
     return location.pathname.startsWith(to);
   };
+
+  const isSavedActive = location.pathname.startsWith("/saved-properties");
 
   return (
     <nav className="w-full relative z-30 font-sans">
@@ -76,8 +79,36 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
           })}
         </div>
 
-        {/* 3. Right Actions: Phone + Get in Touch Button */}
+        {/* 3. Right Actions: Saved Bookmark + Phone + Get in Touch Button */}
         <div className="hidden lg:flex items-center gap-3 shrink-0">
+          {/* Saved Properties Button */}
+          <Link
+            to="/saved-properties"
+            title="Saved Properties"
+            aria-label={`Saved properties, ${savedProperties.length} saved`}
+            className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border transition-all ${
+              isSavedActive
+                ? isHero
+                  ? "bg-amber-500 border-amber-500 text-slate-950 font-semibold shadow-xs"
+                  : "bg-amber-500 border-amber-500 text-slate-950 font-semibold shadow-xs"
+                : isHero
+                ? "text-white/90 border-white/20 hover:bg-white/10"
+                : "text-[#172124] border-[#EDE8E0] hover:bg-[#FAF7F2]"
+            }`}
+          >
+            <Bookmark className={`size-3.5 ${isSavedActive ? "fill-slate-950" : "text-amber-500"}`} />
+            <span className="text-[13px] font-medium">Saved</span>
+            {savedProperties.length > 0 && (
+              <span className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10.5px] font-bold ${
+                isSavedActive
+                  ? "bg-slate-950 text-amber-300"
+                  : "bg-amber-500 text-slate-950"
+              }`}>
+                {savedProperties.length}
+              </span>
+            )}
+          </Link>
+
           <a
             href={phoneTel}
             className={`flex items-center gap-2 text-[13.5px] font-medium px-3.5 py-1.5 rounded-full border transition-all ${
@@ -101,6 +132,18 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
 
         {/* 4. Mobile Menu Button */}
         <div className="flex md:hidden items-center gap-2">
+          <Link
+            to="/saved-properties"
+            className="relative p-2 rounded-full text-[#172124] bg-white border border-[#EDE8E0] shadow-2xs"
+            aria-label="Saved Properties"
+          >
+            <Bookmark className="size-4 text-amber-600" />
+            {savedProperties.length > 0 && (
+              <span className="absolute -top-1 -right-1 size-4 bg-amber-500 text-slate-950 rounded-full text-[9.5px] font-bold flex items-center justify-center">
+                {savedProperties.length}
+              </span>
+            )}
+          </Link>
           <Link
             to="/sell"
             className="px-3.5 py-1.5 rounded-full text-[#172124] bg-[#FAF7F2] border border-[#EDE8E0] text-[12px] font-semibold shadow-2xs"
@@ -144,9 +187,9 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
               </button>
             </div>
 
-            {/* Mobile Nav Links: EXACT 5 ITEMS */}
+            {/* Mobile Nav Links */}
             <div className="flex flex-col gap-2.5 my-auto py-6">
-              {navLinks.map(({ to, label, isSpecial }) => {
+              {navLinks.map(({ to, label }) => {
                 const active = isLinkActive(to);
                 return (
                   <Link
@@ -156,16 +199,34 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
                     className={`flex items-center justify-between font-display text-[19px] px-4 py-3 rounded-[14px] transition-all ${
                       active
                         ? "bg-white text-[#172124] font-bold shadow-xs"
-                        : isSpecial
-                        ? "text-emerald-400 bg-white/5 border border-emerald-500/20 font-semibold"
                         : "text-white/90 hover:text-white hover:bg-white/10 font-medium"
                     }`}
                   >
                     <span>{label}</span>
-                    {isSpecial && <PlusCircle className="size-4 text-emerald-400" />}
                   </Link>
                 );
               })}
+
+              {/* Saved Properties Mobile Link */}
+              <Link
+                to="/saved-properties"
+                onClick={() => setMenuOpen(false)}
+                className={`flex items-center justify-between font-display text-[19px] px-4 py-3 rounded-[14px] transition-all ${
+                  isSavedActive
+                    ? "bg-amber-500 text-slate-950 font-bold shadow-xs"
+                    : "text-amber-300 bg-amber-500/10 border border-amber-500/20 font-semibold"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Bookmark className="size-4.5 fill-current" />
+                  <span>Saved Properties</span>
+                </div>
+                {savedProperties.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 text-xs font-bold">
+                    {savedProperties.length}
+                  </span>
+                )}
+              </Link>
             </div>
 
             {/* Mobile Footer Contact Actions */}

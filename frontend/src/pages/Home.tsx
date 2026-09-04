@@ -2,14 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router";
 import {
   fetchFeaturedProperties,
-  formatPriceINR,
   formatRegionLabel,
   type PropertyCardDto,
 } from "@/lib/api";
 import { SiteNavbar } from "@/components/SiteNavbar";
 import { SiteFooter } from "@/components/SiteFooter";
 import { useBusinessProfile } from "@/context/BusinessProfileContext";
-import { ArrowRight, ArrowUpRight, ChevronDown, MapPin } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronDown, Sparkles } from "lucide-react";
 
 // â”€â”€ Static asset imports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import imgProp1 from "@/imports/RealEstate/721343dadb78ce017961e6632d7d0b288171d892.png";
@@ -551,8 +550,8 @@ function KineticHeadline() {
             >
               {text}
             </span>
-            <span className="text-[#C4A66A] text-[10px] sm:text-[12px] select-none opacity-60">
-              ✦
+            <span className="text-[#C4A66A] select-none opacity-60 flex items-center">
+              <Sparkles className="size-2.5" />
             </span>
           </div>
         ))}

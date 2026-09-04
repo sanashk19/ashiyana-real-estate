@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { Bed, Bath, Maximize2, MapPin } from "lucide-react";
+import { Bed, Bath, Maximize2, MapPin, Bookmark } from "lucide-react";
 import { formatPriceINR } from "@/lib/api";
+import { useSavedProperties } from "@/context/SavedPropertiesContext";
 
 export interface PropertyCardProps {
   id: string;
@@ -34,11 +35,45 @@ export function PropertyCard({
   className = "",
 }: PropertyCardProps) {
   const navigate = useNavigate();
+  const { isSaved, toggleSave } = useSavedProperties();
   const [imgSrc, setImgSrc] = useState(image || FALLBACK_IMAGE);
+  const [isToggling, setIsToggling] = useState(false);
 
   useEffect(() => {
     if (image) setImgSrc(image);
   }, [image]);
+
+  const saved = isSaved(id);
+
+  const handleBookmarkClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (isToggling) return;
+    try {
+      setIsToggling(true);
+      await toggleSave(id, {
+        id,
+        title: name,
+        property_type: (property_type as any) || "villa",
+        listing_type: (listing_type as any) || "sale",
+        status: "active",
+        price: typeof price === "number" ? price : parseFloat(String(price).replace(/[^0-9.]/g, "")) || 0,
+        bedrooms: typeof beds === "string" ? parseInt(beds) || 0 : beds,
+        bathrooms: typeof baths === "string" ? parseInt(baths) || 0 : baths,
+        area_sqft: typeof area === "string" ? parseInt(area) || null : area || null,
+        locality: location,
+        region: "north_goa",
+        is_featured: false,
+        beach_distance_km: null,
+        nri_eligible: true,
+        created_at: new Date().toISOString(),
+      });
+    } catch {
+      // Handled in context
+    } finally {
+      setIsToggling(false);
+    }
+  };
 
   const formattedPrice =
     typeof price === "number" ? formatPriceINR(price, (listing_type as any) || "sale") : price;
@@ -71,6 +106,21 @@ export function PropertyCard({
             </span>
           )}
         </div>
+
+        {/* Bookmark Action Button */}
+        <button
+          type="button"
+          onClick={handleBookmarkClick}
+          disabled={isToggling}
+          aria-label={saved ? `Remove ${name} from saved properties` : `Save ${name} to saved properties`}
+          className={`absolute top-3.5 right-3.5 z-20 p-2 rounded-full backdrop-blur-md transition-all duration-200 shadow-sm ${
+            saved
+              ? "bg-amber-500 text-slate-950 scale-105 shadow-amber-500/30"
+              : "bg-white/90 text-slate-700 hover:bg-white hover:text-amber-600 hover:scale-110"
+          }`}
+        >
+          <Bookmark className={`size-4 ${saved ? "fill-slate-950" : ""}`} />
+        </button>
       </div>
 
       {/* 2. Metadata Section (Homepage Matched Typography) */}

@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import HomePage from "./pages/Home";
 import PropertiesPage from "./pages/Properties";
 import PropertyDetailPage from "./pages/PropertyDetail";
+import SavedPropertiesPage from "./pages/SavedProperties";
 import ContactPage from "./pages/Contact";
 import ServicesPage from "./pages/Services";
 import AreaGuidePage from "./pages/AreaGuide";
@@ -16,6 +17,7 @@ import { AlertCircle } from "lucide-react";
 import { getApiErrorMessage } from "./lib/errorUtils";
 import { useEffect } from "react";
 import { BusinessProfileProvider } from "./context/BusinessProfileContext";
+import { SavedPropertiesProvider } from "./context/SavedPropertiesContext";
 
 function RootLayout() {
   const { pathname } = useLocation();
@@ -73,6 +75,8 @@ const router = createBrowserRouter([
       { path: "/properties", Component: PropertiesPage },
       { path: "/property/:propertyId", Component: PropertyDetailPage },
       { path: "/properties/:propertyId", Component: PropertyDetailPage },
+      { path: "/saved-properties", Component: SavedPropertiesPage },
+      { path: "/saved", Component: SavedPropertiesPage },
       { path: "/services", Component: ServicesPage },
       { path: "/contact", Component: ContactPage },
       { path: "/sell", Component: SellPropertyPage },
@@ -96,7 +100,9 @@ export default function App() {
 
   return (
     <BusinessProfileProvider>
-      <RouterProvider router={router} />
+      <SavedPropertiesProvider>
+        <RouterProvider router={router} />
+      </SavedPropertiesProvider>
     </BusinessProfileProvider>
   );
 }

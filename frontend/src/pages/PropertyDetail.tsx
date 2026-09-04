@@ -22,6 +22,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { BackButton } from "@/components/BackButton";
 import { PropertyCard } from "@/components/PropertyCard";
 import { useBusinessProfile } from "@/context/BusinessProfileContext";
+import { useSavedProperties } from "@/context/SavedPropertiesContext";
 import {
   Bed,
   Bath,
@@ -31,6 +32,7 @@ import {
   Phone,
   MessageSquare,
   Share2,
+  Bookmark,
   ExternalLink,
   ShieldCheck,
   CheckCircle2,
@@ -68,6 +70,10 @@ export default function PropertyDetailPage() {
 
   // Share feedback toast
   const [shareToast, setShareToast] = useState(false);
+
+  // Saved properties state
+  const { isSaved, toggleSave } = useSavedProperties();
+  const [saveLoading, setSaveLoading] = useState(false);
 
   // Similar properties
   const [similarProps, setSimilarProps] = useState<PropertyCardDto[]>([]);
@@ -228,6 +234,47 @@ export default function PropertyDetailPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={async () => {
+                if (!property?.id || saveLoading) return;
+                try {
+                  setSaveLoading(true);
+                  await toggleSave(property.id, {
+                    id: property.id,
+                    title: property.title,
+                    property_type: property.property_type,
+                    listing_type: property.listing_type,
+                    status: property.status,
+                    price: property.price,
+                    bedrooms: property.bedrooms,
+                    bathrooms: property.bathrooms,
+                    area_sqft: property.area_sqft,
+                    locality: property.locality,
+                    region: property.region,
+                    is_featured: property.is_featured,
+                    beach_distance_km: property.beach_distance_km,
+                    nri_eligible: property.nri_eligible,
+                    created_at: property.created_at,
+                  });
+                } catch {
+                  // Handled in context
+                } finally {
+                  setSaveLoading(false);
+                }
+              }}
+              disabled={saveLoading}
+              aria-label={property?.id && isSaved(property.id) ? "Remove from saved listings" : "Save this listing"}
+              className={`px-4 py-1.5 rounded-full border text-[12.5px] font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                property?.id && isSaved(property.id)
+                  ? "bg-amber-500 border-amber-500 text-slate-950 hover:bg-amber-400 shadow-amber-500/20"
+                  : "border-[#EDE8E0] text-[#172124] hover:bg-[#FAF7F2]"
+              }`}
+            >
+              <Bookmark className={`size-3.5 ${property?.id && isSaved(property.id) ? "fill-slate-950 text-slate-950" : "text-[#172124]"}`} />
+              <span>{property?.id && isSaved(property.id) ? "Saved" : "Save Property"}</span>
+            </button>
+
             <button
               onClick={handleShare}
               className="px-4 py-1.5 rounded-full border border-[#EDE8E0] text-[12.5px] font-semibold text-[#172124] hover:bg-[#FAF7F2] transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"

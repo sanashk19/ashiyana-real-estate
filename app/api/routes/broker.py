@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from uuid import UUID
 from datetime import datetime, timezone, date
-from typing import List
+from typing import List, Optional
+import os
 
 from app.db.database import get_db
 from app.core.dependencies import require_broker, require_registered_user
 from app.models.models import (
     User, UserRole, Property, Enquiry, SellerSubmission,
-    PropertyDocument, SellerDocument, PropertyStatus, LeadStatus, SubmissionStatus,
+    PropertyDocument, PropertyStatus, LeadStatus, SubmissionStatus,
+    SavedProperty,
 )
 from app.schemas.broker import (
     DocumentUpload, DocumentAccessGrant, DocumentOut,
@@ -44,24 +47,30 @@ async def get_dashboard(
         )
     )
 
-    # Enquiry counts
+    # Enquiry counts (non-archived only)
     enquiry_stats = await db.execute(
-        select(Enquiry.status, func.count(Enquiry.id)).group_by(Enquiry.status)
+        select(Enquiry.status, func.count(Enquiry.id))
+        .where(Enquiry.is_archived == False)
+        .group_by(Enquiry.status)
     )
     enquiry_map = {row[0]: row[1] for row in enquiry_stats.all()}
 
-    # Enquiries created today
+    # Enquiries created today (non-archived only)
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
     enquiries_today = await db.execute(
-        select(func.count(Enquiry.id)).where(Enquiry.created_at >= today_start)
+        select(func.count(Enquiry.id)).where(
+            Enquiry.created_at >= today_start,
+            Enquiry.is_archived == False
+        )
     )
 
-    # Follow-ups due today or overdue
+    # Follow-ups due today or overdue (non-archived only)
     follow_ups_due = await db.execute(
         select(func.count(Enquiry.id)).where(
             and_(
                 Enquiry.follow_up_date <= datetime.now(timezone.utc),
-                Enquiry.status.notin_([LeadStatus.closed, LeadStatus.lost])
+                Enquiry.status.notin_([LeadStatus.closed, LeadStatus.lost]),
+                Enquiry.is_archived == False
             )
         )
     )
@@ -174,12 +183,12 @@ async def estimate_price(
             estimated_low=result["estimated_low"],
             estimated_mid=result["estimated_mid"],
             estimated_high=result["estimated_high"],
-            confidence_score=result["confidence_score"],
         )
         db.add(valuation)
-        await db.flush()
-    except Exception:
-        pass  # Don't fail the estimate if saving fails
+        await db.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to persist valuation history: {e}")
 
     return ValuationOut(**result)
 
@@ -191,6 +200,7 @@ async def valuation_history(
 ):
     """Broker's history of all past price estimates."""
     from app.models.models import Valuation
+    from app.services.estimator import LOCALITY_BASE_PRICE
     result = await db.execute(
         select(Valuation).order_by(Valuation.created_at.desc()).limit(50)
     )
@@ -201,11 +211,11 @@ async def valuation_history(
             "locality": v.locality,
             "area_sqft": v.area_sqft,
             "property_type": v.property_type.value,
-            "estimated_low": v.estimated_low,
-            "estimated_mid": v.estimated_mid,
-            "estimated_high": v.estimated_high,
-            "confidence_score": v.confidence_score,
-            "created_at": v.created_at.isoformat(),
+            "estimated_low": float(v.estimated_low) if v.estimated_low else 0.0,
+            "estimated_mid": float(v.estimated_mid) if v.estimated_mid else 0.0,
+            "estimated_high": float(v.estimated_high) if v.estimated_high else 0.0,
+            "confidence_score": 0.82 if v.locality.lower().strip() in LOCALITY_BASE_PRICE else 0.60,
+            "created_at": v.created_at.isoformat() if v.created_at else "",
         }
         for v in valuations
     ]
@@ -386,10 +396,8 @@ async def get_sellers(
             )
         )).scalar() or 0
 
-        # Documents count
-        docs_cnt = (await db.execute(
-            select(func.count(SellerDocument.id)).where(SellerDocument.user_id == s.id)
-        )).scalar() or 0
+        # Documents count (retired)
+        docs_cnt = 0
 
         output.append(
             BrokerSellerListItemOut(
@@ -459,24 +467,8 @@ async def get_seller_detail(
                 "status": p.status.value if hasattr(p.status, "value") else str(p.status),
             })
 
-    # Fetch documents
-    docs_res = await db.execute(
-        select(SellerDocument).where(SellerDocument.user_id == seller_id).order_by(SellerDocument.created_at.desc())
-    )
-    docs = docs_res.scalars().all()
-    docs_data = [
-        {
-            "id": str(d.id),
-            "title": d.title,
-            "doc_type": d.doc_type,
-            "original_filename": d.original_filename,
-            "file_size": d.file_size,
-            "mime_type": d.mime_type,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
-            "download_url": f"/api/seller/documents/{d.id}/download",
-        }
-        for d in docs
-    ]
+    # Documents (retired)
+    docs_data = []
 
     return BrokerSellerDetailOut(
         id=seller.id,
@@ -490,3 +482,23 @@ async def get_seller_detail(
         listed_properties=listed_props_data,
         documents=docs_data,
     )
+
+
+@router.get("/properties/watcher-summary", response_model=List[dict])
+async def get_properties_watcher_summary(
+    broker: User = Depends(require_broker),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Broker-only: Bulk aggregation of watcher counts for all properties.
+    Prevents N+1 requests in the broker property management portal.
+    """
+    result = await db.execute(
+        select(SavedProperty.property_id, func.count(SavedProperty.id))
+        .group_by(SavedProperty.property_id)
+    )
+    rows = result.all()
+    return [
+        {"property_id": str(row[0]), "watcher_count": int(row[1])}
+        for row in rows
+    ]
