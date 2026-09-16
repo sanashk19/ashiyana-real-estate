@@ -9,6 +9,7 @@ import AreaGuidePage from "./pages/AreaGuide";
 import BrokerPortalPage from "./pages/BrokerPortal";
 import SellPropertyPage from "./pages/SellProperty";
 import SellerPortalPage from "./pages/SellerPortal";
+import ClientUploadPage from "./pages/ClientUploadPage";
 import NotFoundPage from "./pages/NotFound";
 
 import { Outlet, useLocation, useRouteError, Link } from "react-router";
@@ -19,6 +20,8 @@ import { useEffect } from "react";
 import { BusinessProfileProvider } from "./context/BusinessProfileContext";
 import { SavedPropertiesProvider } from "./context/SavedPropertiesContext";
 
+import { FloatingWhatsAppButton } from "./components/FloatingWhatsAppButton";
+
 function RootLayout() {
   const { pathname } = useLocation();
 
@@ -26,7 +29,12 @@ function RootLayout() {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, [pathname]);
 
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      <FloatingWhatsAppButton />
+    </>
+  );
 }
 
 function RootErrorBoundary() {
@@ -88,6 +96,7 @@ const router = createBrowserRouter([
       { path: "/goa-area-guide", Component: AreaGuidePage },
       { path: "/broker", Component: BrokerPortalPage },
       { path: "/admin", Component: BrokerPortalPage },
+      { path: "/upload-documents", Component: ClientUploadPage },
       { path: "*", Component: NotFoundPage },
     ],
   },

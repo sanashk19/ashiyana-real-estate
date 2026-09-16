@@ -27,7 +27,7 @@ os.makedirs("uploads/submissions", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # ── Routers ────────────────────────────────────────────────────────────────────
-from app.api.routes import auth, properties, enquiries, media, broker, nri, business, seller, deals
+from app.api.routes import auth, properties, enquiries, media, broker, business, seller, deals
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(properties.router, prefix="/api")
@@ -36,7 +36,6 @@ app.include_router(media.router, prefix="/api")
 app.include_router(broker.router, prefix="/api")
 app.include_router(seller.router, prefix="/api")
 app.include_router(deals.router, prefix="/api")
-app.include_router(nri.router, prefix="/api")
 app.include_router(business.router, prefix="/api")
 
 

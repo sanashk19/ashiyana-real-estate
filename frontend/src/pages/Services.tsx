@@ -23,12 +23,14 @@ import imgSellFeatured from "@/imports/RealEstate/721343dadb78ce017961e6632d7d0b
 import imgBuyFeatured from "@/imports/RealEstate/51dadbde438a85a76794ae7bb5d236bd397142c4.png";
 import imgCTABg from "@/imports/RealEstate/161f0ce0c52e9116b767b74364def55806e99cc1.png";
 
+import { BUSINESS_CONTACT } from "@/lib/constants";
+
 export default function ServicesPage() {
   const navigate = useNavigate();
   const { profile } = useBusinessProfile();
   const whatsappUrl = profile?.whatsapp_number
     ? `https://wa.me/${profile.whatsapp_number.replace(/\D/g, "")}`
-    : `https://wa.me/918888083558`;
+    : BUSINESS_CONTACT.whatsappUrl;
 
   const services = [
     {

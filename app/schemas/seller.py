@@ -53,28 +53,6 @@ class SellerProfileOut(BaseModel):
         from_attributes = True
 
 
-# ── Seller Document Schemas ───────────────────────────────────────────────────
-
-class SellerDocumentOut(BaseModel):
-    id: UUID
-    user_id: UUID
-    submission_id: Optional[UUID] = None
-    title: str
-    doc_type: str
-    original_filename: str
-    file_size: int
-    mime_type: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class SellerDocumentUploadResponse(BaseModel):
-    message: str
-    document: SellerDocumentOut
-
-
 # ── Seller Submission & Properties ───────────────────────────────────────────
 
 class SellerSubmissionCardOut(BaseModel):

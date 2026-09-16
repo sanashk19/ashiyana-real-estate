@@ -1,17 +1,14 @@
-import os
-import uuid
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
-from uuid import UUID
-from typing import List, Optional
+from sqlalchemy import select, func, desc, case
+from sqlalchemy.orm import selectinload
+from typing import List
 
 from app.db.database import get_db
-from app.core.dependencies import require_seller, require_registered_user, get_current_user
+from app.core.dependencies import require_seller
 from app.models.models import (
-    User, UserRole, SellerSubmission, Property,
-    SubmissionStatus, PropertyStatus, PropertyImage,
+    User, SellerSubmission, Property,
+    SubmissionStatus, PropertyImage,
 )
 from app.schemas.seller import (
     SellerSubmissionCardOut, SellerListedPropertyOut,
@@ -29,36 +26,31 @@ async def get_seller_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Returns summary metrics for the authenticated seller's dashboard.
+    Returns summary metrics for the authenticated seller's dashboard in a single aggregated query.
     """
-    # Total submissions
-    subs_total_res = await db.execute(
-        select(func.count(SellerSubmission.id)).where(SellerSubmission.user_id == current_user.id)
-    )
-    total_submissions = subs_total_res.scalar() or 0
+    stats_query = select(
+        func.count(SellerSubmission.id).label("total"),
+        func.count(
+            case(
+                (SellerSubmission.status.in_([SubmissionStatus.pending, SubmissionStatus.reviewing]), SellerSubmission.id),
+                else_=None
+            )
+        ).label("pending"),
+        func.count(
+            case(
+                (SellerSubmission.status == SubmissionStatus.listed, SellerSubmission.id),
+                else_=None
+            )
+        ).label("listed"),
+    ).where(SellerSubmission.user_id == current_user.id)
 
-    # Pending submissions
-    pending_res = await db.execute(
-        select(func.count(SellerSubmission.id)).where(
-            SellerSubmission.user_id == current_user.id,
-            SellerSubmission.status.in_([SubmissionStatus.pending, SubmissionStatus.reviewing])
-        )
-    )
-    pending_submissions = pending_res.scalar() or 0
-
-    # Listed properties
-    listed_res = await db.execute(
-        select(func.count(SellerSubmission.id)).where(
-            SellerSubmission.user_id == current_user.id,
-            SellerSubmission.status == SubmissionStatus.listed
-        )
-    )
-    listed_properties = listed_res.scalar() or 0
+    res = await db.execute(stats_query)
+    row = res.one()
 
     return SellerDashboardStats(
-        total_submissions=total_submissions,
-        pending_submissions=pending_submissions,
-        listed_properties=listed_properties,
+        total_submissions=row.total or 0,
+        pending_submissions=row.pending or 0,
+        listed_properties=row.listed or 0,
         total_documents=0,
         seller_name=current_user.full_name,
         seller_email=current_user.email,
@@ -92,34 +84,20 @@ async def get_my_listed_properties(
 ):
     """
     Returns public properties that were converted and listed from this seller's submissions.
+    Uses selectinload to eagerly fetch thumbnail images in a single batch without N+1 per-row queries.
     """
-    result = await db.execute(
-        select(SellerSubmission.converted_property_id)
-        .where(
-            SellerSubmission.user_id == current_user.id,
-            SellerSubmission.converted_property_id.isnot(None)
-        )
-    )
-    property_ids = [row[0] for row in result.all() if row[0] is not None]
-
-    if not property_ids:
-        return []
-
     props_res = await db.execute(
-        select(Property).where(Property.id.in_(property_ids)).order_by(desc(Property.created_at))
+        select(Property)
+        .options(selectinload(Property.images))
+        .join(SellerSubmission, SellerSubmission.converted_property_id == Property.id)
+        .where(SellerSubmission.user_id == current_user.id)
+        .order_by(desc(Property.created_at))
     )
     properties = props_res.scalars().all()
 
     output = []
     for p in properties:
-        # Fetch first image
-        img_res = await db.execute(
-            select(PropertyImage.image_url)
-            .where(PropertyImage.property_id == p.id)
-            .order_by(PropertyImage.display_order.asc())
-            .limit(1)
-        )
-        first_img = img_res.scalar_one_or_none()
+        first_img = p.images[0].image_url if p.images else None
 
         output.append(
             SellerListedPropertyOut(

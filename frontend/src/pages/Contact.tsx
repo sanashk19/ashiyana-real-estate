@@ -7,6 +7,7 @@ import { BackButton } from "@/components/BackButton";
 import { submitEnquiry } from "@/lib/api";
 import { useBusinessProfile } from "@/context/BusinessProfileContext";
 import { getApiErrorMessage } from "@/lib/errorUtils";
+import { BUSINESS_CONTACT } from "@/lib/constants";
 import {
   Phone,
   Mail,
@@ -23,8 +24,10 @@ import {
 // ─── Contact Info Card ────────────────────────────────────────────────────────
 function ContactInfoCard() {
   const { profile } = useBusinessProfile();
-  const phoneTel = `tel:${(profile.phone || "+91 832 246 7890").replace(/\s+/g, "")}`;
-  const whatsappUrl = `https://wa.me/${(profile.whatsapp_number || "+919511854490").replace(/\D/g, "")}?text=${encodeURIComponent(
+  const phoneVal = profile.phone || BUSINESS_CONTACT.phone;
+  const whatsappVal = profile.whatsapp_number || BUSINESS_CONTACT.phoneRaw;
+  const phoneTel = `tel:${phoneVal.replace(/\s+/g, "")}`;
+  const whatsappUrl = `https://wa.me/${whatsappVal.replace(/\D/g, "")}?text=${encodeURIComponent(
     "Hi Kassim, I am contacting you from the Ashiyana Real Estate website."
   )}`;
 
@@ -60,7 +63,7 @@ function ContactInfoCard() {
           </div>
           <div>
             <span className="text-[11.5px] text-[#A6B0B3] block">Phone Consultation</span>
-            <span className="text-[14px] font-semibold">{profile.phone || "+91 832 246 7890"}</span>
+            <span className="text-[14px] font-semibold">{profile.phone || BUSINESS_CONTACT.phoneDisplay}</span>
           </div>
         </a>
 
@@ -75,12 +78,12 @@ function ContactInfoCard() {
           </div>
           <div>
             <span className="text-[11.5px] text-[#A6B0B3] block">Instant WhatsApp</span>
-            <span className="text-[14px] font-semibold">{profile.whatsapp_number || "+91 95118 54490"}</span>
+            <span className="text-[14px] font-semibold">{profile.whatsapp_number || BUSINESS_CONTACT.phoneDisplay}</span>
           </div>
         </a>
 
         <a
-          href={`mailto:${profile.email || "ashiyanarentbuysell@gmail.com"}`}
+          href={`mailto:${profile.email || BUSINESS_CONTACT.email}`}
           className="flex items-center gap-3.5 text-white/90 hover:text-white transition-colors group"
         >
           <div className="size-10 rounded-full bg-white/10 flex items-center justify-center text-[#C9AD86] shrink-0 group-hover:bg-white/20 transition-colors">
@@ -138,9 +141,9 @@ function ContactForm() {
 
     try {
       await submitEnquiry({
-        visitor_name: form.name.trim(),
-        visitor_phone: form.phone.trim(),
-        visitor_email: form.email.trim() || undefined,
+        buyer_name: form.name.trim(),
+        buyer_phone: form.phone.trim(),
+        buyer_email: form.email.trim() || undefined,
         message: `[Subject: ${form.subject}] ${form.message.trim()}`,
       });
 
@@ -301,11 +304,11 @@ function ContactForm() {
 // ─── Contact Page Main ────────────────────────────────────────────────────────
 export default function ContactPage() {
   const { profile } = useBusinessProfile();
-  const phoneClean = (profile.whatsapp_number || "+919511854490").replace(/\D/g, "");
+  const phoneClean = (profile.whatsapp_number || BUSINESS_CONTACT.phoneRaw).replace(/\D/g, "");
   const waUrl = `https://wa.me/${phoneClean}?text=${encodeURIComponent(
     "Hello Ashiyana Real Estate, I would like to enquire about properties in Goa."
   )}`;
-  const telUrl = `tel:${(profile.phone || "+918322467890").replace(/\s+/g, "")}`;
+  const telUrl = `tel:${(profile.phone || BUSINESS_CONTACT.phone).replace(/\s+/g, "")}`;
 
   return (
     <div className="bg-white min-h-screen flex flex-col font-sans text-[#172124]">

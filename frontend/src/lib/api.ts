@@ -3,7 +3,7 @@ import axios from "axios";
 // ─── API Client Configuration ──────────────────────────────────────────────────
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
-  "http://localhost:8000/api";
+  "http://127.0.0.1:8000/api";
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -15,6 +15,9 @@ export const apiClient = axios.create({
 
 // Attach JWT token automatically to every request if available
 apiClient.interceptors.request.use((config) => {
+  if (config.data instanceof FormData && config.headers) {
+    delete config.headers["Content-Type"];
+  }
   if (typeof window !== "undefined") {
     const isSellerReq = config.url?.includes("/seller");
     const sellerToken = localStorage.getItem("ashiyana_seller_token");
@@ -31,21 +34,118 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+// ─── Refresh Token Interceptor Queue ──────────────────────────────────────────
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: unknown) => void;
+}> = [];
+
+const processQueue = (error: unknown, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else if (token) {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    if (!originalRequest) return Promise.reject(error);
+
+    // If 401 and not already retried and not a public auth endpoint
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes("/auth/login") &&
+      !originalRequest.url?.includes("/auth/refresh") &&
+      !originalRequest.url?.includes("/auth/seller/login") &&
+      !originalRequest.url?.includes("/auth/register")
+    ) {
+      const isSellerReq = originalRequest.url?.includes("/seller");
+      const refreshToken =
+        (isSellerReq ? localStorage.getItem("ashiyana_seller_refresh_token") : null) ||
+        localStorage.getItem("ashiyana_user_refresh_token") ||
+        localStorage.getItem("ashiyana_refresh_token") ||
+        localStorage.getItem("ashiyana_seller_refresh_token");
+
+      if (!refreshToken) {
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            return apiClient(originalRequest);
+          })
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const res = await axios.post<AuthTokens>(`${API_BASE_URL}/auth/refresh`, {
+          refresh_token: refreshToken,
+        });
+        const { access_token, refresh_token: new_refresh } = res.data;
+
+        // Update active stored tokens
+        if (localStorage.getItem("ashiyana_token")) {
+          setAuthToken(access_token, new_refresh);
+        }
+        if (localStorage.getItem("ashiyana_user_token")) {
+          setUserAuthToken(access_token, new_refresh);
+        }
+        if (localStorage.getItem("ashiyana_seller_token")) {
+          setSellerAuthToken(access_token, new_refresh);
+        }
+
+        processQueue(null, access_token);
+        originalRequest.headers.Authorization = `Bearer ${access_token}`;
+        return apiClient(originalRequest);
+      } catch (refreshErr) {
+        processQueue(refreshErr, null);
+        clearAuthToken();
+        clearUserAuthToken();
+        clearSellerAuthToken();
+        return Promise.reject(refreshErr);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 // ─── Auth Storage & Management ────────────────────────────────────────────────
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("ashiyana_token");
 }
 
-export function setAuthToken(token: string): void {
+export function setAuthToken(token: string, refreshToken?: string): void {
   if (typeof window !== "undefined") {
     localStorage.setItem("ashiyana_token", token);
+    if (refreshToken) {
+      localStorage.setItem("ashiyana_refresh_token", refreshToken);
+    }
   }
 }
 
 export function clearAuthToken(): void {
   if (typeof window !== "undefined") {
     localStorage.removeItem("ashiyana_token");
+    localStorage.removeItem("ashiyana_refresh_token");
     localStorage.removeItem("ashiyana_user");
   }
 }
@@ -56,15 +156,19 @@ export function getUserAuthToken(): string | null {
   return localStorage.getItem("ashiyana_user_token");
 }
 
-export function setUserAuthToken(token: string): void {
+export function setUserAuthToken(token: string, refreshToken?: string): void {
   if (typeof window !== "undefined") {
     localStorage.setItem("ashiyana_user_token", token);
+    if (refreshToken) {
+      localStorage.setItem("ashiyana_user_refresh_token", refreshToken);
+    }
   }
 }
 
 export function clearUserAuthToken(): void {
   if (typeof window !== "undefined") {
     localStorage.removeItem("ashiyana_user_token");
+    localStorage.removeItem("ashiyana_user_refresh_token");
     localStorage.removeItem("ashiyana_user_profile");
   }
 }
@@ -84,15 +188,19 @@ export function getSellerAuthToken(): string | null {
   return localStorage.getItem("ashiyana_seller_token");
 }
 
-export function setSellerAuthToken(token: string): void {
+export function setSellerAuthToken(token: string, refreshToken?: string): void {
   if (typeof window !== "undefined") {
     localStorage.setItem("ashiyana_seller_token", token);
+    if (refreshToken) {
+      localStorage.setItem("ashiyana_seller_refresh_token", refreshToken);
+    }
   }
 }
 
 export function clearSellerAuthToken(): void {
   if (typeof window !== "undefined") {
     localStorage.removeItem("ashiyana_seller_token");
+    localStorage.removeItem("ashiyana_seller_refresh_token");
     localStorage.removeItem("ashiyana_seller_profile");
   }
 }
@@ -108,7 +216,7 @@ export async function loginBroker(email: string, password: string): Promise<Auth
     password,
   });
   if (response.data.access_token) {
-    setAuthToken(response.data.access_token);
+    setAuthToken(response.data.access_token, response.data.refresh_token);
   }
   return response.data;
 }
@@ -116,7 +224,7 @@ export async function loginBroker(email: string, password: string): Promise<Auth
 export async function loginUser(data: { email: string; password: string }): Promise<AuthTokens> {
   const response = await apiClient.post<AuthTokens>("/auth/login", data);
   if (response.data.access_token) {
-    setUserAuthToken(response.data.access_token);
+    setUserAuthToken(response.data.access_token, response.data.refresh_token);
   }
   return response.data;
 }
@@ -129,7 +237,7 @@ export async function registerUser(data: {
 }): Promise<AuthTokens> {
   const response = await apiClient.post<AuthTokens>("/auth/register", data);
   if (response.data.access_token) {
-    setUserAuthToken(response.data.access_token);
+    setUserAuthToken(response.data.access_token, response.data.refresh_token);
   }
   return response.data;
 }
@@ -142,7 +250,7 @@ export async function registerSeller(data: {
 }): Promise<AuthTokens> {
   const response = await apiClient.post<AuthTokens>("/auth/seller/register", data);
   if (response.data.access_token) {
-    setSellerAuthToken(response.data.access_token);
+    setSellerAuthToken(response.data.access_token, response.data.refresh_token);
   }
   return response.data;
 }
@@ -153,7 +261,7 @@ export async function loginSeller(data: {
 }): Promise<AuthTokens> {
   const response = await apiClient.post<AuthTokens>("/auth/seller/login", data);
   if (response.data.access_token) {
-    setSellerAuthToken(response.data.access_token);
+    setSellerAuthToken(response.data.access_token, response.data.refresh_token);
   }
   return response.data;
 }
@@ -463,10 +571,7 @@ export async function uploadPropertyImages(
   });
   const response = await apiClient.post<PropertyImage[]>(
     `/properties/${propertyId}/images/upload`,
-    formData,
-    {
-      headers: { "Content-Type": "multipart/form-data" },
-    }
+    formData
   );
   return response.data;
 }
@@ -634,7 +739,7 @@ export interface EnquiryDto {
 }
 
 export interface EnquiryCreateDto {
-  property_id: string;
+  property_id?: string | null;
   buyer_name: string;
   buyer_phone: string;
   buyer_email?: string | null;
@@ -958,17 +1063,6 @@ export interface SellerDashboardStatsDto {
   seller_email: string;
 }
 
-export interface SellerDocumentDto {
-  id: string;
-  user_id: string;
-  submission_id?: string | null;
-  title: string;
-  doc_type: string;
-  original_filename: string;
-  file_size: number;
-  mime_type: string;
-  created_at: string;
-}
 
 export interface SellerListedPropertyDto {
   id: string;
@@ -1021,6 +1115,23 @@ export interface DealPropertyInfoDto {
   thumbnail_url?: string | null;
 }
 
+export interface DealPartyInfoDto {
+  name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+}
+
+export interface DealChecklistItemDto {
+  category: string;
+  title: string;
+  party?: string | null;
+  required: boolean;
+  status: "pending" | "uploaded" | "verified";
+  document_id?: string | null;
+}
+
 export interface DealDocumentDto {
   id: string;
   deal_id: string;
@@ -1030,6 +1141,11 @@ export interface DealDocumentDto {
   resource_type: string;
   mime_type: string;
   file_size: number;
+  party?: string | null;
+  document_side?: string | null;
+  is_verified: boolean;
+  verified_at?: string | null;
+  verified_by?: string | null;
   created_at: string;
   updated_at: string;
   download_url?: string;
@@ -1042,6 +1158,8 @@ export interface DealDto {
   property?: DealPropertyInfoDto | null;
   seller_name?: string | null;
   buyer_name?: string | null;
+  buyer?: DealPartyInfoDto | null;
+  seller?: DealPartyInfoDto | null;
   status: DealStatus;
   notes?: string | null;
   document_count: number;
@@ -1052,6 +1170,7 @@ export interface DealDto {
 
 export interface DealDetailDto extends DealDto {
   documents: DealDocumentDto[];
+  checklist: DealChecklistItemDto[];
 }
 
 export interface DealListResponseDto {
@@ -1063,6 +1182,16 @@ export interface CreateDealDto {
   property_id?: string | null;
   seller_name?: string | null;
   buyer_name?: string | null;
+  buyer?: DealPartyInfoDto | null;
+  seller?: DealPartyInfoDto | null;
+  buyer_phone?: string | null;
+  buyer_email?: string | null;
+  buyer_address?: string | null;
+  buyer_notes?: string | null;
+  seller_phone?: string | null;
+  seller_email?: string | null;
+  seller_address?: string | null;
+  seller_notes?: string | null;
   status?: DealStatus;
   notes?: string | null;
 }
@@ -1071,9 +1200,109 @@ export interface UpdateDealDto {
   property_id?: string | null;
   seller_name?: string | null;
   buyer_name?: string | null;
+  buyer?: DealPartyInfoDto | null;
+  seller?: DealPartyInfoDto | null;
+  buyer_phone?: string | null;
+  buyer_email?: string | null;
+  buyer_address?: string | null;
+  buyer_notes?: string | null;
+  seller_phone?: string | null;
+  seller_email?: string | null;
+  seller_address?: string | null;
+  seller_notes?: string | null;
   status?: DealStatus;
   notes?: string | null;
   closed_at?: string | null;
+}
+
+export type DealCreateDto = CreateDealDto;
+export type DealUpdateDto = UpdateDealDto;
+export type DealDocumentCategory = DocumentCategory;
+
+export interface DealUploadRequestCreateDto {
+  party: "buyer" | "seller";
+  requested_docs?: string[];
+  message?: string;
+  valid_days?: number;
+}
+
+export interface DealUploadRequestDto {
+  id: string;
+  deal_id: string;
+  party: string;
+  requested_docs: string[];
+  message?: string | null;
+  expires_at: string;
+  is_revoked: boolean;
+  created_at: string;
+  updated_at: string;
+  upload_token?: string | null;
+  shareable_url?: string | null;
+}
+
+export interface PublicUploadRequestVerifyDto {
+  valid: boolean;
+  deal_number: string;
+  party: string;
+  requested_docs: string[];
+  message?: string | null;
+  expires_at: string;
+  broker_name?: string;
+}
+
+export interface ClientDocumentUploadResponseDto {
+  success: boolean;
+  message: string;
+  document_title: string;
+  document_side?: string | null;
+  original_filename: string;
+}
+
+export interface PrintPackPreviewItemDto {
+  item_type: string;
+  title: string;
+  party: string;
+  document_ids: string[];
+  filenames: string[];
+  estimated_pages: number;
+}
+
+export interface DealPrintPackPreviewDto {
+  deal_id: string;
+  deal_number: string;
+  total_documents_selected: number;
+  paired_documents_count: number;
+  standalone_documents_count: number;
+  estimated_total_pages: number;
+  include_cover_page: boolean;
+  items: PrintPackPreviewItemDto[];
+}
+
+export async function verifyPublicUploadRequest(token: string): Promise<PublicUploadRequestVerifyDto> {
+  const response = await apiClient.get<PublicUploadRequestVerifyDto>(
+    "/public/upload-requests/verify",
+    { params: { token } }
+  );
+  return response.data;
+}
+
+export async function uploadClientDocument(
+  token: string,
+  requestedDocTitle: string,
+  documentSide: string,
+  file: File
+): Promise<ClientDocumentUploadResponseDto> {
+  const formData = new FormData();
+  formData.append("token", token);
+  formData.append("requested_doc_title", requestedDocTitle);
+  formData.append("document_side", documentSide);
+  formData.append("file", file);
+
+  const response = await apiClient.post<ClientDocumentUploadResponseDto>(
+    "/public/upload-requests/upload",
+    formData
+  );
+  return response.data;
 }
 
 export async function fetchDeals(params?: {
@@ -1082,48 +1311,102 @@ export async function fetchDeals(params?: {
   limit?: number;
   offset?: number;
 }): Promise<DealListResponseDto> {
-  const response = await apiClient.get<DealListResponseDto>("/broker/deals", { params });
+  const response = await apiClient.get<DealListResponseDto>("/deals", { params });
   return response.data;
 }
 
 export async function fetchDeal(dealId: string): Promise<DealDetailDto> {
-  const response = await apiClient.get<DealDetailDto>(`/broker/deals/${dealId}`);
+  const response = await apiClient.get<DealDetailDto>(`/deals/${dealId}`);
   return response.data;
 }
 
 export async function createDeal(payload: CreateDealDto): Promise<DealDto> {
-  const response = await apiClient.post<DealDto>("/broker/deals", payload);
+  const response = await apiClient.post<DealDto>("/deals", payload);
   return response.data;
 }
 
 export async function updateDeal(dealId: string, payload: UpdateDealDto): Promise<DealDto> {
-  const response = await apiClient.put<DealDto>(`/broker/deals/${dealId}`, payload);
+  const response = await apiClient.put<DealDto>(`/deals/${dealId}`, payload);
   return response.data;
 }
 
 export async function deleteDeal(dealId: string): Promise<void> {
-  await apiClient.delete(`/broker/deals/${dealId}`);
+  await apiClient.delete(`/deals/${dealId}`);
 }
 
 export async function uploadDealDocument(
   dealId: string,
-  title: string,
-  category: DocumentCategory,
-  file: File
-): Promise<{ message: string; document: DealDocumentDto }> {
+  arg2: File | string,
+  arg3: string | DocumentCategory,
+  arg4?: DocumentCategory | File,
+  meta?: { party?: string; document_side?: string }
+): Promise<DealDocumentDto> {
+  let file: File;
+  let title: string;
+  let category: DocumentCategory;
+
+  if (arg2 instanceof File) {
+    file = arg2;
+    title = (typeof arg3 === "string" ? arg3 : file.name) || file.name;
+    category = (typeof arg4 === "string" ? arg4 : "property") as DocumentCategory;
+  } else {
+    title = arg2;
+    category = arg3 as DocumentCategory;
+    file = arg4 as File;
+  }
+
   const formData = new FormData();
   formData.append("title", title);
   formData.append("category", category);
   formData.append("file", file);
+  if (meta?.party) formData.append("party", meta.party);
+  if (meta?.document_side) formData.append("document_side", meta.document_side);
 
   const response = await apiClient.post<{ message: string; document: DealDocumentDto }>(
-    `/broker/deals/${dealId}/documents`,
-    formData,
-    {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    }
+    `/deals/${dealId}/documents`,
+    formData
+  );
+  return response.data.document;
+}
+
+export async function verifyDealDocument(
+  dealId: string,
+  documentId: string,
+  isVerified: boolean = true
+): Promise<DealDocumentDto> {
+  const response = await apiClient.patch<DealDocumentDto>(
+    `/deals/${dealId}/documents/${documentId}/verify`,
+    { is_verified: isVerified }
+  );
+  return response.data;
+}
+
+export async function createDealUploadRequest(
+  dealId: string,
+  payload: DealUploadRequestCreateDto
+): Promise<DealUploadRequestDto> {
+  const response = await apiClient.post<DealUploadRequestDto>(
+    `/deals/${dealId}/upload-requests`,
+    payload
+  );
+  return response.data;
+}
+
+export async function fetchDealUploadRequests(
+  dealId: string
+): Promise<DealUploadRequestDto[]> {
+  const response = await apiClient.get<DealUploadRequestDto[]>(
+    `/deals/${dealId}/upload-requests`
+  );
+  return response.data;
+}
+
+export async function revokeDealUploadRequest(
+  dealId: string,
+  requestId: string
+): Promise<DealUploadRequestDto> {
+  const response = await apiClient.post<DealUploadRequestDto>(
+    `/deals/${dealId}/upload-requests/${requestId}/revoke`
   );
   return response.data;
 }
@@ -1132,14 +1415,22 @@ export async function fetchDealDocuments(
   dealId: string,
   category?: DocumentCategory
 ): Promise<DealDocumentDto[]> {
-  const response = await apiClient.get<DealDocumentDto[]>(`/broker/deals/${dealId}/documents`, {
+  const response = await apiClient.get<DealDocumentDto[]>(`/deals/${dealId}/documents`, {
     params: category ? { category } : undefined,
   });
   return response.data;
 }
 
-export async function downloadDealDocument(documentId: string, filename: string): Promise<void> {
-  const response = await apiClient.get(`/broker/documents/${documentId}/download`, {
+export async function downloadDealDocument(
+  arg1: string,
+  arg2?: string,
+  arg3?: string
+): Promise<void> {
+  // Supports (documentId, filename) or (dealId, documentId, filename)
+  const documentId = arg3 ? arg2! : arg1;
+  const filename = arg3 ? arg3 : (arg2 || "document");
+
+  const response = await apiClient.get(`/documents/${documentId}/download`, {
     responseType: "blob",
   });
   const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -1152,8 +1443,47 @@ export async function downloadDealDocument(documentId: string, filename: string)
   window.URL.revokeObjectURL(url);
 }
 
-export async function deleteDealDocument(documentId: string): Promise<void> {
-  await apiClient.delete(`/broker/documents/${documentId}`);
+export async function deleteDealDocument(
+  dealIdOrDocId: string,
+  maybeDocId?: string
+): Promise<void> {
+  const url = maybeDocId
+    ? `/deals/${dealIdOrDocId}/documents/${maybeDocId}`
+    : `/documents/${dealIdOrDocId}`;
+  await apiClient.delete(url);
+}
+
+export async function previewDealPrintPack(
+  dealId: string,
+  documentIds: string[],
+  includeCoverPage: boolean = true
+): Promise<DealPrintPackPreviewDto> {
+  const response = await apiClient.post<DealPrintPackPreviewDto>(
+    `/deals/${dealId}/print-pack/preview`,
+    {
+      document_ids: documentIds,
+      include_cover_page: includeCoverPage,
+    }
+  );
+  return response.data;
+}
+
+export async function generateDealPrintPack(
+  dealId: string,
+  documentIds: string[],
+  includeCoverPage: boolean = true
+): Promise<Blob> {
+  const response = await apiClient.post(
+    `/deals/${dealId}/print-pack`,
+    {
+      document_ids: documentIds,
+      include_cover_page: includeCoverPage,
+    },
+    {
+      responseType: "blob",
+    }
+  );
+  return response.data;
 }
 
 // ─── Broker Seller CRM Management APIs ────────────────────────────────────────
@@ -1215,80 +1545,6 @@ export async function fetchBrokerSellerDetail(sellerId: string): Promise<BrokerS
   return response.data;
 }
 
-/**
- * Broker fetches private seller legal documents associated with a property from GET /api/broker/properties/{propertyId}/seller-documents
- */
-export async function fetchPropertySellerDocuments(
-  propertyId: string
-): Promise<SellerDocumentDto[]> {
-  const response = await apiClient.get<SellerDocumentDto[]>(
-    `/broker/properties/${propertyId}/seller-documents`
-  );
-  return response.data;
-}
-
-// ─── Broker AI Valuation Estimator APIs ──────────────────────────────────────
-
-export interface ValuationRequestDto {
-  locality: string;
-  area_sqft: number;
-  property_type: string;
-  bedrooms?: number;
-  age_years?: number;
-  beach_distance_km?: number;
-  mopa_airport_km?: number;
-  floor_number?: number;
-  region?: string;
-  furnished?: string;
-  property_id?: string;
-  submission_id?: string;
-}
-
-export interface ValuationResultDto {
-  estimated_low: number;
-  estimated_mid: number;
-  estimated_high: number;
-  price_per_sqft_approx: number;
-  confidence_score: number;
-  locality_known: boolean;
-  note: string;
-}
-
-export interface ValuationHistoryItemDto {
-  id: string;
-  locality: string;
-  area_sqft: number;
-  property_type: string;
-  estimated_low: number;
-  estimated_mid: number;
-  estimated_high: number;
-  confidence_score: number;
-  created_at: string;
-}
-
-/**
- * Estimate property market valuation range (Broker only) from POST /api/broker/estimate-price
- */
-export async function estimatePropertyPrice(
-  data: ValuationRequestDto
-): Promise<ValuationResultDto> {
-  const response = await apiClient.post<ValuationResultDto>(
-    "/broker/estimate-price",
-    data
-  );
-  return response.data;
-}
-
-/**
- * Fetch past valuation history log (Broker only) from GET /api/broker/valuation-history
- */
-export async function fetchValuationHistory(): Promise<ValuationHistoryItemDto[]> {
-  const response = await apiClient.get<ValuationHistoryItemDto[]>(
-    "/broker/valuation-history"
-  );
-  return response.data;
-}
-
 // ─── Buyer Saved Properties / Bookmarks APIs ──────────────────────────────────
 
 /**
@@ -1342,7 +1598,7 @@ export interface PropertyWatcherSummaryDto {
  * GET /api/properties/{propertyId}/watchers
  */
 export async function fetchPropertyWatchers(propertyId: string): Promise<PropertyWatcherItemDto[]> {
-  const token = getBrokerAuthToken();
+  const token = getAuthToken();
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
   const response = await apiClient.get<PropertyWatcherItemDto[]>(
     `/properties/${propertyId}/watchers`,
@@ -1356,7 +1612,7 @@ export async function fetchPropertyWatchers(propertyId: string): Promise<Propert
  * GET /api/broker/properties/watcher-summary
  */
 export async function fetchPropertyWatcherSummary(): Promise<PropertyWatcherSummaryDto[]> {
-  const token = getBrokerAuthToken();
+  const token = getAuthToken();
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
   const response = await apiClient.get<PropertyWatcherSummaryDto[]>(
     "/broker/properties/watcher-summary",

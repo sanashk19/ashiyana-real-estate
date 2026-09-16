@@ -70,6 +70,11 @@ async def upload_photos(
                 print(f"Cloudinary upload warning: {e}. Falling back to local storage.")
 
         if not image_url:
+            if settings.ENVIRONMENT == "production":
+                raise HTTPException(
+                    status_code=502,
+                    detail="Cloudinary property media upload failed in production. Local storage fallback is disabled."
+                )
             upload_dir = os.path.join("uploads", "properties")
             os.makedirs(upload_dir, exist_ok=True)
             clean_filename = f"{uuid.uuid4().hex[:10]}_{file.filename.replace(' ', '_')}"
@@ -120,6 +125,11 @@ async def upload_seller_photos(
                 print(f"Cloudinary upload warning: {e}. Falling back to local submissions storage.")
 
         if not image_url:
+            if settings.ENVIRONMENT == "production":
+                raise HTTPException(
+                    status_code=502,
+                    detail="Cloudinary seller photo upload failed in production. Local storage fallback is disabled."
+                )
             upload_dir = os.path.join("uploads", "submissions")
             os.makedirs(upload_dir, exist_ok=True)
             clean_filename = f"{uuid.uuid4().hex[:10]}_{file.filename.replace(' ', '_')}"

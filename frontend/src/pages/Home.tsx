@@ -303,12 +303,6 @@ function AboutScene() {
   const sectionRef = useRef<HTMLDivElement>(null);
   const progress = useStickyProgress(sectionRef);
 
-  // Progressive image composition:
-  // State 1 (progress 0 - 0.4): Image 1 visible, Image 2 sliding in
-  // State 2 (progress 0.4 - 1.0): Both images settled in staggered arrangement
-  const img2TranslateY = Math.max(0, (1 - Math.min(1, progress * 2.5)) * 40);
-  const img2Opacity = Math.min(1, 0.4 + progress * 0.6);
-
   return (
     <section
       ref={sectionRef}
@@ -316,7 +310,7 @@ function AboutScene() {
       style={{ minHeight: "120vh" }}
       aria-label="About Ashiyana"
     >
-      <div className="sticky top-0 min-h-screen flex flex-col justify-between py-10 sm:py-14 px-6 sm:px-12 lg:px-20 max-w-[1440px] mx-auto w-full">
+      <div className="relative lg:sticky lg:top-0 min-h-screen flex flex-col justify-between py-10 sm:py-14 px-6 sm:px-12 lg:px-20 max-w-[1440px] mx-auto w-full">
         {/* Top Header Bar */}
         <div className="flex items-center justify-between text-[11px] sm:text-[12px] font-semibold tracking-[0.18em] uppercase text-[#172124]/70 border-b border-[#E8E3DA] pb-4">
           <span>(01) About Us</span>
@@ -324,12 +318,12 @@ function AboutScene() {
           <span className="font-mono text-[#172124]/50">ESTABLISHED IN 2014</span>
         </div>
 
-        {/* Center: Two Staggered Editorial Images */}
+        {/* Center: Two Staggered Editorial Images (Structured for seamless swap with authentic journey/founder imagery) */}
         <div className="my-6 sm:my-8 flex justify-center items-center gap-4 sm:gap-8">
           <div
-            className="rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg border border-[#E0DAD0] bg-[#E8E3DA]"
+            className="rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg border border-[#E0DAD0] bg-white"
             style={{
-              width: "clamp(150px, 20vw, 290px)",
+              width: "clamp(140px, 19vw, 280px)",
               aspectRatio: "1/1",
               transition: "transform 0.4s ease-out",
               transform: `scale(${1 + progress * 0.04})`,
@@ -337,24 +331,23 @@ function AboutScene() {
           >
             <img
               src={imgAbout1}
-              alt="Luxury Goa Architecture"
+              alt="Hands-on property walkthroughs and client guidance across Goa"
               className="w-full h-full object-cover"
               loading="lazy"
             />
           </div>
           <div
-            className="rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg border border-[#E0DAD0] bg-[#E8E3DA]"
+            className="rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg border border-[#E0DAD0] bg-white"
             style={{
-              width: "clamp(150px, 20vw, 290px)",
+              width: "clamp(140px, 19vw, 280px)",
               aspectRatio: "1/1",
-              transform: `translateY(${img2TranslateY}px)`,
-              opacity: img2Opacity,
-              transition: "transform 0.3s ease-out, opacity 0.3s ease-out",
+              transition: "transform 0.4s ease-out",
+              transform: `scale(${1 + progress * 0.04})`,
             }}
           >
             <img
               src={imgAbout2}
-              alt="Goa Coastal Living"
+              alt="Personal guidance through legal documentation and long-term client relationships"
               className="w-full h-full object-cover"
               loading="lazy"
             />
@@ -362,25 +355,33 @@ function AboutScene() {
         </div>
 
         {/* Bottom: Editorial Story & Big Statement */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-16 items-end pt-2">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-start lg:items-end pt-2">
           <div className="lg:col-span-5 flex flex-col gap-3">
             <h3 className="font-display font-semibold text-[19px] sm:text-[22px] text-[#172124] leading-snug">
-              Experience Luxury Like Never Before
+              A Relationship That Goes Beyond the Sale
             </h3>
             <p className="text-[13px] sm:text-[13.5px] text-[#717A7D] leading-relaxed">
-              Founded in Goa, Ashiyana is a boutique real estate brokerage dedicated to curating bespoke villas, heritage estates, and coastal sanctuaries with transparency, unmatched local mastery, and seamless legal diligence.
+              At Ashiyana, we believe our responsibility doesn't end when the paperwork is signed. From finding the right property to completing the formalities and settling in, we stay beside our clients every step of the way — and remain there whenever they need us.
             </p>
           </div>
-          <div className="lg:col-span-7 flex flex-col gap-5 items-start">
-            <p
+          <div className="lg:col-span-7 flex flex-col gap-4 items-start">
+            <h2
               className="font-display font-medium text-[#172124] leading-[1.22] tracking-tight"
-              style={{ fontSize: "clamp(1.35rem, 2.4vw, 2.2rem)" }}
+              style={{ fontSize: "clamp(1.3rem, 2.2vw, 2.1rem)" }}
             >
-              We are a premier real estate and design firm specializing in high-end villas and tailored coastal properties across North & South Goa.
-            </p>
+              More Than a Broker. A Partner Throughout the Journey.
+            </h2>
+            <div className="flex flex-col gap-3 text-[13px] sm:text-[13.5px] text-[#5C6467] leading-relaxed">
+              <p>
+                From the first property visit to the final sale deed, we personally guide our clients through every step of the process. From property verification and documentation to agreements, registrations, and handover, my father remains involved throughout — making sure every detail is handled with care and clarity.
+              </p>
+              <p>
+                And our relationship doesn't end when the keys are handed over. Even after the transaction is complete, he remains available whenever our clients need guidance or assistance. Because for us, a property transaction isn't simply a deal — it's a relationship we continue to stand by.
+              </p>
+            </div>
             <button
               onClick={() => navigate("/services")}
-              className="flex items-center gap-3 bg-[#EDE8E0] hover:bg-[#E2DDD3] text-[#172124] px-5 py-2.5 rounded-full border border-[#DCD5C9] font-medium text-[13px] transition-colors cursor-pointer group"
+              className="flex items-center gap-3 bg-[#EDE8E0] hover:bg-[#E2DDD3] text-[#172124] px-5 py-2.5 rounded-full border border-[#DCD5C9] font-medium text-[13px] transition-colors cursor-pointer group mt-1"
             >
               <span>Learn More</span>
               <div className="size-6 rounded-full bg-[#A56846] text-white flex items-center justify-center group-hover:scale-105 transition-transform">

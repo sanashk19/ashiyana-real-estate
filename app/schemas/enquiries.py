@@ -19,7 +19,7 @@ def validate_phone_number(v: str) -> str:
 # ── Enquiry (buyer inquiry — routes through broker always) ────────────────────
 
 class EnquiryCreate(BaseModel):
-    property_id: UUID
+    property_id: Optional[UUID] = None
     buyer_name: str
     buyer_phone: str
     buyer_email: Optional[EmailStr] = None
@@ -44,7 +44,7 @@ class EnquiryBrokerUpdate(BaseModel):
 
 class EnquiryOut(BaseModel):
     id: UUID
-    property_id: UUID
+    property_id: Optional[UUID] = None
     property_title: Optional[str] = None
     buyer_name: str
     buyer_phone: str

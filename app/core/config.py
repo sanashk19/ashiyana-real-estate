@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 30 minutes
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7     # 7 days
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # App
     APP_NAME: str = "Ashiyana Buy Sell Rent"
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str = "http://localhost:5173"
     ENVIRONMENT: str = "development"
 
     class Config:

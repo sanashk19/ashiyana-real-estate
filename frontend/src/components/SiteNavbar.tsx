@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router";
 import { AshiyanaLogo } from "@/lib/shared";
 import { useBusinessProfile } from "@/context/BusinessProfileContext";
 import { useSavedProperties } from "@/context/SavedPropertiesContext";
+import { BUSINESS_CONTACT } from "@/lib/constants";
 import { X, Menu, Phone, MessageSquare, ArrowUpRight, Bookmark } from "lucide-react";
 
 type NavbarProps = {
@@ -15,7 +16,7 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
   const { profile } = useBusinessProfile();
   const { savedProperties } = useSavedProperties();
   const location = useLocation();
-  const phoneTel = `tel:${(profile?.phone || "+91 832 246 7890").replace(/\s+/g, "")}`;
+  const phoneTel = `tel:${(profile?.phone || BUSINESS_CONTACT.phone).replace(/\s+/g, "")}`;
 
   // Navigation items
   const navLinks = [
@@ -118,7 +119,7 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
             }`}
           >
             <Phone className="size-3.5 text-[#8B7D68]" />
-            <span>{profile?.phone || "+91 832 246 7890"}</span>
+            <span>{profile?.phone || BUSINESS_CONTACT.phoneDisplay}</span>
           </a>
 
           <Link
@@ -238,7 +239,7 @@ export function SiteNavbar({ variant = "page" }: NavbarProps) {
                 <div className="size-8 rounded-full bg-white/10 flex items-center justify-center text-[#17805B]">
                   <Phone className="size-4" />
                 </div>
-                <span>{profile?.phone || "+91 832 246 7890"}</span>
+                <span>{profile?.phone || BUSINESS_CONTACT.phoneDisplay}</span>
               </a>
 
               {profile?.whatsapp_number && (

@@ -226,8 +226,8 @@ class Property(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
+    images = relationship("PropertyImage", back_populates="property", cascade="all, delete-orphan", order_by="PropertyImage.display_order.asc()")
     enquiries = relationship("Enquiry", back_populates="property", cascade="all, delete-orphan")
-    documents = relationship("PropertyDocument", back_populates="property", cascade="all, delete-orphan")
     saved_by = relationship("SavedProperty", back_populates="property", cascade="all, delete-orphan")
     deals = relationship("Deal", back_populates="property", cascade="all, delete-orphan")
 
@@ -240,7 +240,7 @@ class Enquiry(Base):
     __tablename__ = "enquiries"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # null if not registered
 
     # Buyer details (collected in form)
@@ -321,9 +321,21 @@ class Deal(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     deal_number = Column(String(50), unique=True, nullable=False, index=True)
-    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=True, index=True)
+    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id", ondelete="CASCADE"), nullable=True, index=True)
     seller_name = Column(String(255), nullable=True)
     buyer_name = Column(String(255), nullable=True)
+
+    # Structured party contact details
+    buyer_phone = Column(String(50), nullable=True)
+    buyer_email = Column(String(255), nullable=True)
+    buyer_address = Column(Text, nullable=True)
+    buyer_notes = Column(Text, nullable=True)
+
+    seller_phone = Column(String(50), nullable=True)
+    seller_email = Column(String(255), nullable=True)
+    seller_address = Column(Text, nullable=True)
+    seller_notes = Column(Text, nullable=True)
+
     status = Column(
         SQLEnum(DealStatus, values_callable=lambda x: [e.value for e in x], native_enum=False, length=30),
         default=DealStatus.inquiry,
@@ -337,6 +349,7 @@ class Deal(Base):
 
     property = relationship("Property", back_populates="deals")
     documents = relationship("DealDocument", back_populates="deal", cascade="all, delete-orphan")
+    upload_requests = relationship("DealUploadRequest", back_populates="deal", cascade="all, delete-orphan")
 
 
 class DealDocument(Base):
@@ -347,7 +360,7 @@ class DealDocument(Base):
     __tablename__ = "deal_documents"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    deal_id = Column(UUID(as_uuid=True), ForeignKey("deals.id"), nullable=False, index=True)
+    deal_id = Column(UUID(as_uuid=True), ForeignKey("deals.id", ondelete="CASCADE"), nullable=False, index=True)
     category = Column(
         SQLEnum(DocumentCategory, values_callable=lambda x: [e.value for e in x], native_enum=False, length=30),
         nullable=False,
@@ -359,31 +372,43 @@ class DealDocument(Base):
     resource_type = Column(String(50), nullable=False, default="raw")
     mime_type = Column(String(100), nullable=False, default="application/octet-stream")
     file_size = Column(Integer, nullable=False, default=0)
+
+    # Document metadata & verification
+    party = Column(String(20), nullable=True)  # buyer, seller, property, legal, financial, other
+    document_side = Column(String(20), nullable=True)  # front, back, complete
+    is_verified = Column(Boolean, default=False, nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    verified_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     deal = relationship("Deal", back_populates="documents")
+    verifier = relationship("User", foreign_keys=[verified_by])
 
 
-class PropertyDocument(Base):
+class DealUploadRequest(Base):
     """
-    Document vault — broker controls who sees what.
-    Buyers only see docs after broker explicitly grants access.
+    Secure tokenized client document upload request.
+    Allows broker to generate a time-limited, revocable upload link for a client.
+    The secret token is never stored in plaintext; only its SHA-256 hash is persisted.
     """
-    __tablename__ = "property_documents"
+    __tablename__ = "deal_upload_requests"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False)
+    deal_id = Column(UUID(as_uuid=True), ForeignKey("deals.id", ondelete="CASCADE"), nullable=False, index=True)
+    party = Column(String(20), nullable=False)  # buyer or seller
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    requested_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    requested_docs = Column(Text, nullable=False, default="[]")  # JSON string of requested doc titles/types
+    message = Column(Text, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    is_revoked = Column(Boolean, default=False, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    name = Column(String(255), nullable=False)   # "7/12 Extract", "NOC", "Sale Agreement"
-    doc_type = Column(String(100), nullable=False)
-    file_url = Column(String(500), nullable=False)  # Cloudinary URL
-    is_public = Column(Boolean, default=False)   # false = broker controls access
-    allowed_user_ids = Column(JSON, default=list)  # list of user UUIDs broker has unlocked
-
-    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    property = relationship("Property", back_populates="documents")
+    deal = relationship("Deal", back_populates="upload_requests")
+    requester = relationship("User", foreign_keys=[requested_by])
 
 
 class SavedProperty(Base):
@@ -431,32 +456,6 @@ class PropertyImage(Base):
         "Property",
         back_populates="images"
     )
-
-class Valuation(Base):
-    """
-    Private AI price estimations — ONLY visible to broker.
-    Never exposed in any public API endpoint.
-    """
-    __tablename__ = "valuations"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    property_id = Column(UUID(as_uuid=True), ForeignKey("properties.id"), nullable=True)
-    submission_id = Column(UUID(as_uuid=True), ForeignKey("seller_submissions.id"), nullable=True)
-
-    # Inputs to model
-    locality = Column(String(255), nullable=False)
-    area_sqft = Column(Float, nullable=False)
-    property_type = Column(SQLEnum(PropertyType, values_callable=lambda x: [e.value for e in x], native_enum=False, length=30), nullable=False)
-    bedrooms = Column(Integer, nullable=True)
-    age_years = Column(Integer, nullable=True)
-    beach_distance_km = Column(Float, nullable=True)
-    region = Column(SQLEnum(GoaRegion, values_callable=lambda x: [e.value for e in x], native_enum=False, length=30), nullable=False)
-
-    # Model output
-    estimated_low = Column(Numeric(15, 2))
-    estimated_mid = Column(Numeric(15, 2))
-    estimated_high = Column(Numeric(15, 2))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class BusinessProfile(Base):

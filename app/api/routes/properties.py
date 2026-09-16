@@ -286,6 +286,11 @@ async def upload_property_images(
                 print(f"Cloudinary upload warning: {e}. Falling back to local static storage.")
 
         if not image_url:
+            if settings.ENVIRONMENT == "production":
+                raise HTTPException(
+                    status_code=502,
+                    detail="Cloudinary property image upload failed in production. Local storage fallback is disabled."
+                )
             # Local storage fallback for development
             upload_dir = os.path.join("uploads", "properties", str(property_id))
             os.makedirs(upload_dir, exist_ok=True)

@@ -23,6 +23,7 @@ import { BackButton } from "@/components/BackButton";
 import { PropertyCard } from "@/components/PropertyCard";
 import { useBusinessProfile } from "@/context/BusinessProfileContext";
 import { useSavedProperties } from "@/context/SavedPropertiesContext";
+import { BUSINESS_CONTACT } from "@/lib/constants";
 import {
   Bed,
   Bath,
@@ -96,6 +97,9 @@ export default function PropertyDetailPage() {
         if (isMounted) {
           setProperty(data);
           setActiveImageIndex(0);
+          if (data.title) {
+            document.title = `${data.title} | Ashiyana Real Estate Goa`;
+          }
         }
       })
       .catch((err) => {
@@ -526,8 +530,8 @@ export default function PropertyDetailPage() {
 
                 {/* 2. WhatsApp Direct Action */}
                 <a
-                  href={`https://wa.me/${(profile?.whatsapp_number || "+919511854490").replace(/\D/g, "")}?text=${encodeURIComponent(
-                    `Hi ${profile?.broker_name || "Kassim Shaikh"}, I am interested in viewing "${title}" in ${locality}.`
+                  href={`https://wa.me/${(profile?.whatsapp_number || BUSINESS_CONTACT.phoneRaw).replace(/\D/g, "")}?text=${encodeURIComponent(
+                    `Hi ${profile?.broker_name || BUSINESS_CONTACT.name}, I am interested in viewing "${title}" in ${locality}.`
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -539,11 +543,11 @@ export default function PropertyDetailPage() {
 
                 {/* 3. Phone Call Action */}
                 <a
-                  href={`tel:${(profile?.phone || "+918322467890").replace(/\s+/g, "")}`}
+                  href={`tel:${(profile?.phone || BUSINESS_CONTACT.phone).replace(/\s+/g, "")}`}
                   className="w-full py-3.5 rounded-full border border-[#EDE8E0] text-[#172124] font-semibold text-[13.5px] hover:bg-[#FAF7F2] transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Phone className="size-4 text-[#717A7D]" />
-                  <span>Call {profile?.phone || "+91 832 246 7890"}</span>
+                  <span>Call {profile?.phone || BUSINESS_CONTACT.phoneDisplay}</span>
                 </a>
               </div>
 
@@ -690,9 +694,9 @@ function PropertyEnquiryModal({
     try {
       await submitEnquiry({
         property_id: propertyId,
-        visitor_name: name.trim(),
-        visitor_phone: phone.trim(),
-        visitor_email: email.trim() || undefined,
+        buyer_name: name.trim(),
+        buyer_phone: phone.trim(),
+        buyer_email: email.trim() || undefined,
         message: message.trim(),
         is_nri: isNri,
       });

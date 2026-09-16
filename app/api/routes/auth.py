@@ -8,6 +8,7 @@ from app.db.database import get_db
 from app.core.security import (
     hash_password, verify_password,
     create_access_token, create_refresh_token, decode_token,
+    hash_token,
 )
 from app.core.dependencies import get_current_user, require_broker
 from app.core.config import settings
@@ -20,10 +21,13 @@ from app.schemas.auth import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _issue_tokens(user: User) -> TokenResponse:
+async def _issue_tokens(user: User, db: AsyncSession) -> TokenResponse:
     role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
     access = create_access_token({"sub": str(user.id), "role": role_val})
     refresh = create_refresh_token({"sub": str(user.id)})
+    user.refresh_token = hash_token(refresh)
+    db.add(user)
+    await db.commit()
     return TokenResponse(access_token=access, refresh_token=refresh)
 
 
@@ -43,9 +47,7 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.flush()   # get the UUID before commit
-    await db.commit()
-    await db.refresh(user)
-    return _issue_tokens(user)
+    return await _issue_tokens(user, db)
 
 
 @router.post("/seller/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -71,9 +73,7 @@ async def register_seller(
     )
     db.add(seller_user)
     await db.flush()
-    await db.commit()
-    await db.refresh(seller_user)
-    return _issue_tokens(seller_user)
+    return await _issue_tokens(seller_user, db)
 
 
 @router.post("/seller/login", response_model=TokenResponse)
@@ -93,7 +93,7 @@ async def login_seller(data: UserLogin, db: AsyncSession = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled. Please contact support.")
 
-    return _issue_tokens(user)
+    return await _issue_tokens(user, db)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -110,7 +110,7 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
 
-    return _issue_tokens(user)
+    return await _issue_tokens(user, db)
 
 @router.patch("/users/{user_id}/make-broker")
 async def make_broker(
@@ -204,7 +204,7 @@ async def google_auth(data: GoogleAuthRequest, db: AsyncSession = Depends(get_db
         if not user.google_id:
             user.google_id = google_id
 
-    return _issue_tokens(user)
+    return await _issue_tokens(user, db)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -213,14 +213,23 @@ async def refresh_token(data: RefreshRequest, db: AsyncSession = Depends(get_db)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    from uuid import UUID
     result = await db.execute(select(User).where(User.id == UUID(payload["sub"])))
     user = result.scalar_one_or_none()
 
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found")
 
-    return _issue_tokens(user)
+    # Secure verification: Compare SHA-256 hash of incoming refresh token
+    incoming_hash = hash_token(data.refresh_token)
+    if not user.refresh_token or user.refresh_token != incoming_hash:
+        # Token already rotated or revoked - invalidate session for safety
+        user.refresh_token = None
+        db.add(user)
+        await db.commit()
+        raise HTTPException(status_code=401, detail="Refresh token has expired or been revoked")
+
+    # Rotate refresh token
+    return await _issue_tokens(user, db)
 
 
 @router.get("/me", response_model=UserOut)
@@ -229,7 +238,14 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/logout")
-async def logout():
-    # JWT is stateless — client deletes tokens
-    # For server-side invalidation, store refresh token in DB (future enhancement)
+async def logout(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Invalidate server-side refresh token on user logout.
+    """
+    current_user.refresh_token = None
+    db.add(current_user)
+    await db.commit()
     return {"message": "Logged out successfully"}

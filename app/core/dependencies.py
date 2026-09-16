@@ -57,7 +57,7 @@ async def get_optional_user(
 def require_broker(current_user: User = Depends(get_current_user)) -> User:
     """
     Dependency that blocks non-broker users from broker-only endpoints.
-    The private AI estimator, full addresses, and CRM use this.
+    Full addresses, Deal Vault, and CRM use this.
     """
     if current_user.role != UserRole.broker:
         raise HTTPException(

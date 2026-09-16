@@ -315,3 +315,64 @@ def delete_deal_document(public_id: str, resource_type: str = "raw") -> bool:
     except Exception as e:
         logger.error(f"Failed to delete Cloudinary asset {public_id}: {e}")
         return False
+
+
+def extract_public_id_from_url(image_url: str) -> Optional[str]:
+    """
+    Extracts Cloudinary public ID from a property media URL.
+    Example: https://res.cloudinary.com/.../upload/.../ashiyana/properties/xyz.jpg -> ashiyana/properties/xyz
+    """
+    if not image_url or not isinstance(image_url, str):
+        return None
+    match = re.search(r"/upload/(?:[a-zA-Z0-9_,.-]+/)*(?:v\d+/)?(ashiyana/[^.?#]+)", image_url)
+    if match:
+        return match.group(1)
+    return None
+
+
+def delete_property_media_asset(image_url: str) -> bool:
+    """
+    Safely delete a public property media asset from Cloudinary or local uploads.
+    Shielded with try/except so database operations are never aborted due to storage failures.
+    Does NOT touch authenticated deal documents.
+    """
+    if not image_url or not isinstance(image_url, str):
+        return False
+
+    # Check for local storage file first
+    if "/uploads/properties/" in image_url or image_url.startswith("uploads/properties/"):
+        filename = os.path.basename(image_url.split("?")[0])
+        local_path = os.path.abspath(os.path.join("uploads", "properties", filename))
+        if os.path.exists(local_path) and "uploads" in local_path:
+            try:
+                os.remove(local_path)
+                logger.info(f"Deleted local property image: {local_path}")
+                return True
+            except Exception as e:
+                logger.warning(f"Failed to delete local property image {local_path}: {e}")
+                return False
+        return True
+
+    # Cloudinary asset deletion
+    public_id = extract_public_id_from_url(image_url)
+    if not public_id:
+        return False
+
+    if not is_cloudinary_configured():
+        logger.info(f"Cloudinary not configured; skipped remote deletion for {public_id}")
+        return True
+
+    try:
+        init_cloudinary()
+        result = cloudinary.uploader.destroy(
+            public_id,
+            resource_type="image",
+            type="upload",  # public upload
+        )
+        status_res = result.get("result")
+        logger.info(f"Cloudinary image destroy {public_id}: {status_res}")
+        return status_res in {"ok", "not found"}
+    except Exception as e:
+        logger.warning(f"Safe Cloudinary property image deletion failed for {public_id}: {e}")
+        return False
+

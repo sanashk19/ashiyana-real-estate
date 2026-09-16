@@ -31,13 +31,14 @@ async def submit_enquiry(
     Any visitor can enquire. Inquiry goes to broker dashboard ONLY.
     Buyer never gets seller/owner contact info.
     """
-    # Verify property exists and is active
-    prop_result = await db.execute(
-        select(Property).where(Property.id == data.property_id)
-    )
-    prop = prop_result.scalar_one_or_none()
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found")
+    # Verify property exists and is active if property_id is provided
+    if data.property_id:
+        prop_result = await db.execute(
+            select(Property).where(Property.id == data.property_id)
+        )
+        prop = prop_result.scalar_one_or_none()
+        if not prop:
+            raise HTTPException(status_code=404, detail="Property not found")
 
     enquiry = Enquiry(
         property_id=data.property_id,
@@ -92,6 +93,8 @@ async def list_enquiries(
         item = EnquiryOut.model_validate(e)
         if e.property:
             item.property_title = f"{e.property.title} ({e.property.locality})"
+        elif not e.property_id:
+            item.property_title = "General Contact Enquiry"
         out.append(item.model_dump())
     return out
 

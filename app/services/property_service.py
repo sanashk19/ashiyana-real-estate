@@ -12,6 +12,7 @@ from app.schemas.properties import (
     PropertyImageCreate,
     PropertyImageReorderItem,
 )
+from app.services.cloudinary_service import delete_property_media_asset
 
 
 class PropertyService:
@@ -59,7 +60,16 @@ class PropertyService:
 
     @staticmethod
     async def delete(db: AsyncSession, prop: Property) -> None:
+        # Fetch associated image URLs prior to cascade deletion so Cloudinary assets can be cleaned up
+        images_result = await db.execute(
+            select(PropertyImage.image_url).where(PropertyImage.property_id == prop.id)
+        )
+        image_urls = [row[0] for row in images_result.all() if row[0]]
         await db.delete(prop)
+        await db.flush()
+        # Safely clean up associated media assets
+        for url in image_urls:
+            delete_property_media_asset(url)
 
     @staticmethod
     async def increment_view(db: AsyncSession, prop: Property) -> None:
@@ -278,6 +288,7 @@ class PropertyService:
         if not img:
             return False
 
+        image_url = img.image_url
         was_thumbnail = img.is_thumbnail
         await db.delete(img)
         await db.flush()
@@ -293,6 +304,9 @@ class PropertyService:
             if remaining_images:
                 remaining_images[0].is_thumbnail = True
                 await db.flush()
+
+        # Safely delete media asset from Cloudinary / local storage
+        delete_property_media_asset(image_url)
 
         return True
 

@@ -175,7 +175,6 @@ Current entities:
 - Saved Properties
 - Enquiries
 - Seller Submissions
-- Valuations
 
 ---
 
@@ -237,10 +236,14 @@ Run Docker
 
 ```bash
 docker compose up --build
+
+docker ps
+docker start ashiyana_db
 ```
 
 Backend:
-
+```bash
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 http://localhost:8000
 ```

@@ -36,16 +36,9 @@ import {
   fetchBrokerSellerDetail,
   BrokerSellerListItemDto,
   BrokerSellerDetailDto,
-  estimatePropertyPrice,
-  fetchValuationHistory,
-  ValuationRequestDto,
-  ValuationResultDto,
-  ValuationHistoryItemDto,
   fetchPropertyWatchers,
   fetchPropertyWatcherSummary,
   PropertyWatcherItemDto,
-  fetchPropertySellerDocuments,
-  SellerDocumentDto,
   fetchDeals,
   fetchDeal,
   createDeal,
@@ -54,13 +47,24 @@ import {
   uploadDealDocument,
   downloadDealDocument,
   deleteDealDocument,
-  type DealListItemDto,
+  verifyDealDocument,
+  createDealUploadRequest,
+  fetchDealUploadRequests,
+  revokeDealUploadRequest,
+  type DealDto,
   type DealDetailDto,
   type DealCreateDto,
   type DealUpdateDto,
   type DealStatus,
   type DealDocumentCategory,
   type DealDocumentDto,
+  type DealUploadRequestDto,
+  type DealChecklistItemDto,
+  type DealPartyInfoDto,
+  previewDealPrintPack,
+  generateDealPrintPack,
+  type DealPrintPackPreviewDto,
+  type PrintPackPreviewItemDto,
 } from "@/lib/api";
 import { AshiyanaLogo } from "@/lib/shared";
 import { PropertyImageManager } from "@/components/PropertyImageManager";
@@ -107,14 +111,20 @@ import {
   PanelLeftOpen,
   TrendingUp,
   Sparkles,
-  Calculator,
-  SlidersHorizontal,
   FolderKey,
   Handshake,
   Briefcase,
   UploadCloud,
   FileCheck,
   ArrowLeft,
+  Copy,
+  Link2,
+  ListChecks,
+  UserCheck,
+  Printer,
+  ArrowUp,
+  ArrowDown,
+  Layers,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -127,7 +137,6 @@ type ActiveTab =
   | "deals"
   | "enquiries"
   | "visits"
-  | "valuation"
   | "profile";
 
 const DEAL_STATUS_META: Record<DealStatus, { label: string; bg: string; text: string; border: string }> = {
@@ -210,7 +219,7 @@ export default function BrokerPortal() {
   const [loadingSellerDetail, setLoadingSellerDetail] = useState(false);
 
   // Deals & Deal Document Vault State
-  const [deals, setDeals] = useState<DealListItemDto[]>([]);
+  const [deals, setDeals] = useState<DealDto[]>([]);
   const [loadingDeals, setLoadingDeals] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [selectedDealDetail, setSelectedDealDetail] = useState<DealDetailDto | null>(null);
@@ -265,6 +274,61 @@ export default function BrokerPortal() {
   const [deletingDealConfirmId, setDeletingDealConfirmId] = useState<string | null>(null);
   const [deleteDealLoading, setDeleteDealLoading] = useState(false);
 
+  // Phase D1: Deal Workspace & Client Upload Requests State
+  const [dealWorkspaceTab, setDealWorkspaceTab] = useState<"overview" | "documents" | "verification" | "parties">("overview");
+  const [dealUploadRequests, setDealUploadRequests] = useState<DealUploadRequestDto[]>([]);
+  const [loadingUploadRequests, setLoadingUploadRequests] = useState(false);
+  const [createUploadReqModalOpen, setCreateUploadReqModalOpen] = useState(false);
+  const [reqParty, setReqParty] = useState<"buyer" | "seller">("buyer");
+  const [reqSelectedDocs, setReqSelectedDocs] = useState<string[]>([]);
+  const [reqMessage, setReqMessage] = useState("");
+  const [reqValidDays, setReqValidDays] = useState(7);
+  const [generatedLink, setGeneratedLink] = useState<{ url: string; token: string } | null>(null);
+  const [generatingLink, setGeneratingLink] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Phase D3: Document Preparation + Print Pack Generator State
+  const [printPackModalOpen, setPrintPackModalOpen] = useState(false);
+  const [printPackSelectedDocIds, setPrintPackSelectedDocIds] = useState<string[]>([]);
+  const [printPackIncludeCover, setPrintPackIncludeCover] = useState(true);
+  const [printPackLoadingPreview, setPrintPackLoadingPreview] = useState(false);
+  const [printPackGenerating, setPrintPackGenerating] = useState(false);
+  const [printPackPreview, setPrintPackPreview] = useState<DealPrintPackPreviewDto | null>(null);
+  const [printPackError, setPrintPackError] = useState<string | null>(null);
+  const [printPackGeneratedBlob, setPrintPackGeneratedBlob] = useState<Blob | null>(null);
+  const [printPackGeneratedBlobUrl, setPrintPackGeneratedBlobUrl] = useState<string | null>(null);
+  const [printPackPageCount, setPrintPackPageCount] = useState<number | null>(null);
+
+  // Document metadata for uploads
+  const [uploadDocParty, setUploadDocParty] = useState<string>("property");
+  const [uploadDocSide, setUploadDocSide] = useState<string>("complete");
+
+  // Edit Parties Modal State
+  const [editPartiesModalOpen, setEditPartiesModalOpen] = useState(false);
+  const [editPartyData, setEditPartyData] = useState<{
+    buyer_name: string;
+    buyer_phone: string;
+    buyer_email: string;
+    buyer_address: string;
+    buyer_notes: string;
+    seller_name: string;
+    seller_phone: string;
+    seller_email: string;
+    seller_address: string;
+    seller_notes: string;
+  }>({
+    buyer_name: "",
+    buyer_phone: "",
+    buyer_email: "",
+    buyer_address: "",
+    buyer_notes: "",
+    seller_name: "",
+    seller_phone: "",
+    seller_email: "",
+    seller_address: "",
+    seller_notes: "",
+  });
+
   // Profile Edit State
   const [profileForm, setProfileForm] = useState<BusinessProfileDto>(globalBusinessProfile);
   const [profileSaving, setProfileSaving] = useState(false);
@@ -306,9 +370,6 @@ export default function BrokerPortal() {
   const [propertyWatchersList, setPropertyWatchersList] = useState<PropertyWatcherItemDto[]>([]);
   const [loadingWatchersList, setLoadingWatchersList] = useState(false);
 
-  // Property Legal Documents State
-  const [propertyDocuments, setPropertyDocuments] = useState<SellerDocumentDto[]>([]);
-  const [loadingPropertyDocs, setLoadingPropertyDocs] = useState(false);
 
   // Image Enlarge Modal State
   const [enlargedImageUrl, setEnlargedImageUrl] = useState<string | null>(null);
@@ -368,45 +429,24 @@ export default function BrokerPortal() {
   const [leadSaving, setLeadSaving] = useState(false);
   const [leadFeedback, setLeadFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Valuation Estimator State
-  const [valuationForm, setValuationForm] = useState<ValuationRequestDto>({
-    locality: "Calangute",
-    property_type: "villa",
-    area_sqft: 2000,
-    bedrooms: 3,
-    age_years: 4,
-    beach_distance_km: 1.5,
-    mopa_airport_km: 28,
-    floor_number: 0,
-    region: "north_goa",
-    furnished: "furnished",
-  });
-  const [valuationResult, setValuationResult] = useState<ValuationResultDto | null>(null);
-  const [valuationHistory, setValuationHistory] = useState<ValuationHistoryItemDto[]>([]);
-  const [valuationLoading, setValuationLoading] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [valuationError, setValuationError] = useState<string | null>(null);
-
   // ─── Loaders ─────────────────────────────────────────────────────────────────
   const loadDashboardData = async () => {
     setLoadingStats(true);
     setLoadingProps(true);
     setLoadingSellers(true);
-    setHistoryLoading(true);
     try {
-      const [statsRes, propsRes, enqRes, subsRes, sellersRes, valHistRes, watcherRes, dealsRes] = await Promise.allSettled([
+      const [statsRes, propsRes, enqRes, subsRes, sellersRes, watcherRes, dealsRes] = await Promise.allSettled([
         fetchDashboardStats(),
         fetchProperties({ limit: 100 }),
         fetchEnquiries({ limit: 100 }),
         fetchSubmissions({ limit: 100 }),
         fetchBrokerSellers(),
-        fetchValuationHistory(),
         fetchPropertyWatcherSummary(),
         fetchDeals(),
       ]);
 
       // Check if session has expired (401 Unauthorized)
-      const has401 = [statsRes, propsRes, enqRes, subsRes, sellersRes, valHistRes, watcherRes, dealsRes].some(
+      const has401 = [statsRes, propsRes, enqRes, subsRes, sellersRes, watcherRes, dealsRes].some(
         (r) => r.status === "rejected" && (r.reason?.response?.status === 401 || String(r.reason).includes("401"))
       );
       if (has401) {
@@ -421,8 +461,10 @@ export default function BrokerPortal() {
       if (enqRes.status === "fulfilled") setEnquiries(enqRes.value || []);
       if (subsRes.status === "fulfilled") setSubmissions(subsRes.value || []);
       if (sellersRes.status === "fulfilled") setSellers(sellersRes.value || []);
-      if (valHistRes.status === "fulfilled") setValuationHistory(valHistRes.value || []);
-      if (dealsRes.status === "fulfilled") setDeals(dealsRes.value || []);
+      if (dealsRes.status === "fulfilled") {
+        const val: any = dealsRes.value;
+        setDeals(Array.isArray(val) ? val : val?.deals || []);
+      }
       if (watcherRes.status === "fulfilled") {
         const map: Record<string, number> = {};
         watcherRes.value.forEach((item) => {
@@ -436,7 +478,6 @@ export default function BrokerPortal() {
       setLoadingStats(false);
       setLoadingProps(false);
       setLoadingSellers(false);
-      setHistoryLoading(false);
     }
   };
 
@@ -470,23 +511,40 @@ export default function BrokerPortal() {
   const handleOpenDealDetail = async (dealId: string) => {
     setSelectedDealId(dealId);
     setLoadingDealDetail(true);
+    setDealWorkspaceTab("overview");
     try {
-      const detail = await fetchDeal(dealId);
+      const [detail, uploadReqs] = await Promise.all([
+        fetchDeal(dealId),
+        fetchDealUploadRequests(dealId).catch(() => []),
+      ]);
       setSelectedDealDetail(detail);
+      setDealUploadRequests(uploadReqs);
       setEditDealForm({
-        title: detail.title,
+        title: (detail as any).title || detail.deal_number,
         property_id: detail.property_id || undefined,
         status: detail.status,
-        buyer_name: detail.buyer_name || "",
-        buyer_contact: detail.buyer_contact || "",
-        seller_name: detail.seller_name || "",
-        seller_contact: detail.seller_contact || "",
-        agreed_price: detail.agreed_price || undefined,
-        commission_rate: detail.commission_rate || undefined,
-        commission_amount: detail.commission_amount || undefined,
-        target_closing_date: detail.target_closing_date || undefined,
-        actual_closing_date: detail.actual_closing_date || undefined,
-        broker_notes: detail.broker_notes || "",
+        buyer_name: detail.buyer_name || detail.buyer?.name || "",
+        buyer_contact: detail.buyer?.phone || (detail as any).buyer_phone || "",
+        seller_name: detail.seller_name || detail.seller?.name || "",
+        seller_contact: detail.seller?.phone || (detail as any).seller_phone || "",
+        agreed_price: (detail as any).agreed_price || undefined,
+        commission_rate: (detail as any).commission_rate || undefined,
+        commission_amount: (detail as any).commission_amount || undefined,
+        target_closing_date: (detail as any).target_closing_date || undefined,
+        actual_closing_date: detail.closed_at || undefined,
+        broker_notes: detail.notes || "",
+      });
+      setEditPartyData({
+        buyer_name: detail.buyer_name || detail.buyer?.name || "",
+        buyer_phone: detail.buyer?.phone || (detail as any).buyer_phone || "",
+        buyer_email: detail.buyer?.email || (detail as any).buyer_email || "",
+        buyer_address: detail.buyer?.address || (detail as any).buyer_address || "",
+        buyer_notes: detail.buyer?.notes || (detail as any).buyer_notes || "",
+        seller_name: detail.seller_name || detail.seller?.name || "",
+        seller_phone: detail.seller?.phone || (detail as any).seller_phone || "",
+        seller_email: detail.seller?.email || (detail as any).seller_email || "",
+        seller_address: detail.seller?.address || (detail as any).seller_address || "",
+        seller_notes: detail.seller?.notes || (detail as any).seller_notes || "",
       });
     } catch (err: any) {
       alert(getApiErrorMessage(err, "Failed to load deal details."));
@@ -610,7 +668,9 @@ export default function BrokerPortal() {
         selectedDealId,
         selectedDealDocFile,
         uploadDocTitle.trim() || selectedDealDocFile.name,
-        uploadDocCategory
+        uploadDocCategory,
+        uploadDocParty,
+        uploadDocSide
       );
       if (selectedDealDetail) {
         setSelectedDealDetail({
@@ -624,10 +684,252 @@ export default function BrokerPortal() {
       setUploadDocModalOpen(false);
       setUploadDocTitle("");
       setSelectedDealDocFile(null);
+      setUploadDocParty("property");
+      setUploadDocSide("complete");
     } catch (err: any) {
       setUploadDealDocError(getApiErrorMessage(err, "Failed to upload deal document. Max size is 15MB."));
     } finally {
       setUploadingDealDoc(false);
+    }
+  };
+
+  const handleToggleDocVerification = async (doc: DealDocumentDto) => {
+    if (!selectedDealId) return;
+    try {
+      const updatedDoc = await verifyDealDocument(selectedDealId, doc.id, !doc.is_verified);
+      if (selectedDealDetail) {
+        const updatedDocs = (selectedDealDetail.documents || []).map((d) => (d.id === doc.id ? updatedDoc : d));
+        // Refresh deal to get recomputed checklist
+        const refreshedDeal = await fetchDeal(selectedDealId);
+        setSelectedDealDetail({
+          ...refreshedDeal,
+          documents: updatedDocs,
+        });
+      }
+    } catch (err: any) {
+      alert(getApiErrorMessage(err, "Failed to update document verification status."));
+    }
+  };
+
+  const handleGenerateUploadLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDealId) return;
+    if (reqSelectedDocs.length === 0) {
+      alert("Please select at least one document to request.");
+      return;
+    }
+    setGeneratingLink(true);
+    try {
+      const res = await createDealUploadRequest(selectedDealId, {
+        party: reqParty,
+        requested_docs: reqSelectedDocs,
+        custom_message: reqMessage.trim() || undefined,
+        expires_in_days: reqValidDays,
+      });
+      setGeneratedLink({
+        url: res.upload_url,
+        token: res.plain_token || "",
+      });
+      // Refresh upload requests list
+      const updatedReqs = await fetchDealUploadRequests(selectedDealId);
+      setDealUploadRequests(updatedReqs);
+    } catch (err: any) {
+      alert(getApiErrorMessage(err, "Failed to create upload request."));
+    } finally {
+      setGeneratingLink(false);
+    }
+  };
+
+  const handleRevokeUploadLink = async (requestId: string) => {
+    if (!selectedDealId) return;
+    try {
+      await revokeDealUploadRequest(selectedDealId, requestId);
+      const updatedReqs = await fetchDealUploadRequests(selectedDealId);
+      setDealUploadRequests(updatedReqs);
+    } catch (err: any) {
+      alert(getApiErrorMessage(err, "Failed to revoke upload link."));
+    }
+  };
+
+  // Phase D3: Print Pack Handlers
+  const handleOpenPrintPackModal = async () => {
+    if (!selectedDealDetail) return;
+    setPrintPackModalOpen(true);
+    setPrintPackError(null);
+    setPrintPackGeneratedBlob(null);
+    if (printPackGeneratedBlobUrl) {
+      URL.revokeObjectURL(printPackGeneratedBlobUrl);
+      setPrintPackGeneratedBlobUrl(null);
+    }
+    const allDocIds = (selectedDealDetail.documents || []).map((d) => d.id);
+    setPrintPackSelectedDocIds(allDocIds);
+    setPrintPackIncludeCover(true);
+    setPrintPackPageCount(null);
+
+    // Fetch initial preview
+    if (allDocIds.length > 0) {
+      setPrintPackLoadingPreview(true);
+      try {
+        const prev = await previewDealPrintPack(selectedDealDetail.id, allDocIds, true);
+        setPrintPackPreview(prev);
+        setPrintPackPageCount(prev.estimated_total_pages);
+      } catch {
+        // non-blocking
+      } finally {
+        setPrintPackLoadingPreview(false);
+      }
+    }
+  };
+
+  const handleToggleDocSelection = (docId: string) => {
+    setPrintPackSelectedDocIds((prev) =>
+      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
+    );
+    setPrintPackGeneratedBlob(null);
+    if (printPackGeneratedBlobUrl) {
+      URL.revokeObjectURL(printPackGeneratedBlobUrl);
+      setPrintPackGeneratedBlobUrl(null);
+    }
+  };
+
+  const handleSelectAllDocs = () => {
+    if (!selectedDealDetail) return;
+    setPrintPackSelectedDocIds((selectedDealDetail.documents || []).map((d) => d.id));
+    setPrintPackGeneratedBlob(null);
+  };
+
+  const handleSelectAllVerifiedDocs = () => {
+    if (!selectedDealDetail) return;
+    const verifiedIds = (selectedDealDetail.documents || [])
+      .filter((d) => d.is_verified)
+      .map((d) => d.id);
+    setPrintPackSelectedDocIds(verifiedIds);
+    setPrintPackGeneratedBlob(null);
+  };
+
+  const handleClearDocSelection = () => {
+    setPrintPackSelectedDocIds([]);
+    setPrintPackGeneratedBlob(null);
+  };
+
+  const handleMoveSelectedDoc = (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= printPackSelectedDocIds.length) return;
+    const copy = [...printPackSelectedDocIds];
+    const temp = copy[index];
+    copy[index] = copy[targetIndex];
+    copy[targetIndex] = temp;
+    setPrintPackSelectedDocIds(copy);
+    setPrintPackGeneratedBlob(null);
+  };
+
+  const handleGeneratePrintPack = async () => {
+    if (!selectedDealDetail || printPackSelectedDocIds.length === 0) return;
+    setPrintPackGenerating(true);
+    setPrintPackError(null);
+    try {
+      const blob = await generateDealPrintPack(
+        selectedDealDetail.id,
+        printPackSelectedDocIds,
+        printPackIncludeCover
+      );
+      const blobUrl = URL.createObjectURL(blob);
+      setPrintPackGeneratedBlob(blob);
+      setPrintPackGeneratedBlobUrl(blobUrl);
+
+      // Refresh preview counts
+      try {
+        const prev = await previewDealPrintPack(
+          selectedDealDetail.id,
+          printPackSelectedDocIds,
+          printPackIncludeCover
+        );
+        setPrintPackPreview(prev);
+        setPrintPackPageCount(prev.estimated_total_pages);
+      } catch {
+        // non-blocking
+      }
+    } catch (err: any) {
+      setPrintPackError(getApiErrorMessage(err, "Failed to generate print pack."));
+    } finally {
+      setPrintPackGenerating(false);
+    }
+  };
+
+  const handleDownloadGeneratedPack = () => {
+    if (!printPackGeneratedBlob || !selectedDealDetail) return;
+    const safeDeal = selectedDealDetail.deal_number.replace(/[^a-zA-Z0-9_-]/g, "");
+    const filename = `${safeDeal}_Document-Pack.pdf`;
+    const url = window.URL.createObjectURL(printPackGeneratedBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handlePrintGeneratedPack = () => {
+    if (!printPackGeneratedBlobUrl) return;
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.src = printPackGeneratedBlobUrl;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch {
+        window.open(printPackGeneratedBlobUrl, "_blank");
+      }
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 60000);
+    };
+  };
+
+  const handleSavePartiesSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDealId) return;
+    setDealSaving(true);
+    try {
+      const updated = await updateDeal(selectedDealId, {
+        buyer_name: editPartyData.buyer_name,
+        buyer_phone: editPartyData.buyer_phone,
+        buyer_email: editPartyData.buyer_email,
+        buyer_address: editPartyData.buyer_address,
+        buyer_notes: editPartyData.buyer_notes,
+        seller_name: editPartyData.seller_name,
+        seller_phone: editPartyData.seller_phone,
+        seller_email: editPartyData.seller_email,
+        seller_address: editPartyData.seller_address,
+        seller_notes: editPartyData.seller_notes,
+      });
+      setSelectedDealDetail(updated);
+      setDeals((prev) =>
+        prev.map((d) =>
+          d.id === updated.id
+            ? {
+                ...d,
+                buyer_name: updated.buyer_name,
+                seller_name: updated.seller_name,
+              }
+            : d
+        )
+      );
+      setEditPartiesModalOpen(false);
+    } catch (err: any) {
+      alert(getApiErrorMessage(err, "Failed to update party details."));
+    } finally {
+      setDealSaving(false);
     }
   };
 
@@ -817,16 +1119,6 @@ export default function BrokerPortal() {
       is_featured: prop.is_featured,
     });
     setEditFeedback(null);
-    setPropertyDocuments([]);
-    setLoadingPropertyDocs(true);
-    try {
-      const docs = await fetchPropertySellerDocuments(prop.id);
-      setPropertyDocuments(docs || []);
-    } catch (err) {
-      console.error("Error loading property seller documents:", err);
-    } finally {
-      setLoadingPropertyDocs(false);
-    }
   };
 
   const handleSaveEditProperty = async (e: React.FormEvent) => {
@@ -1131,46 +1423,6 @@ export default function BrokerPortal() {
       } finally {
         setLoadingArchived(false);
       }
-    }
-  };
-
-  // ─── AI Valuation Estimator Handler ─────────────────────────────────────────
-  const handleEstimatePrice = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setValuationLoading(true);
-    setValuationError(null);
-    try {
-      const res = await estimatePropertyPrice({
-        ...valuationForm,
-        area_sqft: Number(valuationForm.area_sqft),
-        bedrooms: Number(valuationForm.bedrooms || 0),
-        age_years: Number(valuationForm.age_years || 0),
-        beach_distance_km: Number(valuationForm.beach_distance_km || 0),
-        mopa_airport_km: Number(valuationForm.mopa_airport_km || 0),
-        floor_number: Number(valuationForm.floor_number || 0),
-      });
-      setValuationResult(res);
-
-      // Auto-refresh history log from database
-      const hist = await fetchValuationHistory();
-      setValuationHistory(hist || []);
-    } catch (err: any) {
-      console.error("Valuation error:", err);
-      setValuationError(getApiErrorMessage(err, "Failed to compute valuation estimate."));
-    } finally {
-      setValuationLoading(false);
-    }
-  };
-
-  const handleRefreshValuationHistory = async () => {
-    setHistoryLoading(true);
-    try {
-      const hist = await fetchValuationHistory();
-      setValuationHistory(hist || []);
-    } catch (err) {
-      console.error("Valuation history error:", err);
-    } finally {
-      setHistoryLoading(false);
     }
   };
 
@@ -1623,12 +1875,6 @@ export default function BrokerPortal() {
               icon: <Calendar className="size-4" />,
               badge: scheduledVisits.length,
             },
-            {
-              id: "valuation",
-              label: "Property Valuation",
-              icon: <Calculator className="size-4" />,
-              badge: valuationHistory.length > 0 ? valuationHistory.length : undefined,
-            },
             { id: "profile", label: "Profile & Settings", icon: <Settings className="size-4" /> },
           ].map((item) => {
             const isActive = activeTab === item.id;
@@ -1745,7 +1991,6 @@ export default function BrokerPortal() {
             { id: "deals", label: "Deals & Vault", icon: <FolderKey className="size-4" />, badge: activeDealsCount },
             { id: "enquiries", label: "Leads & Enquiries", icon: <Users className="size-4" />, badge: newLeadsCount },
             { id: "visits", label: "Scheduled Visits", icon: <Calendar className="size-4" />, badge: scheduledVisits.length },
-            { id: "valuation", label: "Property Valuation", icon: <Calculator className="size-4" />, badge: valuationHistory.length > 0 ? valuationHistory.length : undefined },
             { id: "profile", label: "Profile & Settings", icon: <Settings className="size-4" /> },
           ].map((item) => (
             <button
@@ -2508,7 +2753,7 @@ export default function BrokerPortal() {
                   <div className="border border-[#EDE8E0] rounded-[18px] p-6 flex flex-col gap-4 bg-[#FAF7F2]">
                     <div className="flex items-center justify-between">
                       <h3 className="text-[12px] font-mono font-bold text-[#8B7D68] uppercase tracking-wider">
-                        2. Pricing & Valuation
+                        2. Pricing
                       </h3>
                       {newProp.price > 0 && (
                         <span className="text-[13px] font-display font-bold text-[#172124] bg-white px-3.5 py-1 rounded-full border border-[#EDE8E0]">
@@ -3104,119 +3349,224 @@ export default function BrokerPortal() {
                     </div>
                   </div>
 
-                  {/* 2-Column Layout: Commercials & Document Vault */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                    {/* Left Column: Deal Info, Parties, Notes (5 cols) */}
-                    <div className="lg:col-span-5 flex flex-col gap-6">
-                      {/* Linked Property Card */}
-                      {selectedDealDetail.property ? (
+                  {/* Deal Workspace Sub-Navigation Tabs */}
+                  <div className="flex items-center gap-2 border-b border-[#EDE8E0] pb-2 overflow-x-auto">
+                    {[
+                      { id: "overview", label: "Overview & Financials", icon: Briefcase },
+                      { id: "documents", label: `Document Vault (${selectedDealDetail.documents?.length || 0})`, icon: FolderKey },
+                      { id: "verification", label: `Verification & Checklist (${selectedDealDetail.checklist?.filter(c => c.is_complete).length || 0}/${selectedDealDetail.checklist?.length || 0})`, icon: ListChecks },
+                      { id: "parties", label: "Client Parties & CRM", icon: Users },
+                    ].map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = dealWorkspaceTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setDealWorkspaceTab(tab.id as any)}
+                          className={`px-4 py-2 rounded-full text-[13px] font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                            isActive
+                              ? "bg-[#172124] text-white shadow-xs"
+                              : "bg-white text-[#717A7D] hover:text-[#172124] border border-[#EDE8E0] hover:bg-[#FAF7F2]"
+                          }`}
+                        >
+                          <Icon className={`size-3.5 ${isActive ? "text-[#C9AD86]" : "text-[#8B7D68]"}`} />
+                          <span>{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* ══════════ TAB 1: OVERVIEW & FINANCIALS ══════════ */}
+                  {dealWorkspaceTab === "overview" && (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                      {/* Left: Property Info + Deal Lifecycle Stepper */}
+                      <div className="lg:col-span-7 flex flex-col gap-6">
+                        {/* 5-Stage Lifecycle Stepper */}
                         <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-4">
+                          <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                            Transaction Lifecycle
+                          </span>
+                          <div className="grid grid-cols-5 gap-2">
+                            {(["inquiry", "negotiation", "agreement", "completed", "cancelled"] as DealStatus[]).map((st, idx) => {
+                              const isCurrent = selectedDealDetail.status === st;
+                              const isPast =
+                                (selectedDealDetail.status === "completed" && st !== "cancelled") ||
+                                (selectedDealDetail.status === "agreement" && (st === "inquiry" || st === "negotiation")) ||
+                                (selectedDealDetail.status === "negotiation" && st === "inquiry");
+                              return (
+                                <button
+                                  key={st}
+                                  type="button"
+                                  onClick={() => handleQuickDealStatusChange(st)}
+                                  className={`p-3 rounded-[14px] text-center border transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
+                                    isCurrent
+                                      ? "bg-[#172124] text-white border-[#172124] shadow-xs"
+                                      : isPast
+                                      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                      : "bg-[#FAF7F2] text-[#717A7D] border-[#EDE8E0] hover:border-[#172124]/30"
+                                  }`}
+                                >
+                                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider">
+                                    Step {idx + 1}
+                                  </span>
+                                  <span className="text-[11.5px] font-semibold capitalize truncate max-w-full">
+                                    {st === "agreement" ? "Agreement" : st === "completed" ? "Closed Won" : st}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Associated Property Card */}
+                        {selectedDealDetail.property ? (
+                          <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                                Associated Property
+                              </span>
+                              <Link
+                                to={`/property/${selectedDealDetail.property.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[12px] font-semibold text-[#172124] hover:text-[#8B7D68] flex items-center gap-1"
+                              >
+                                <span>View Listing</span>
+                                <ExternalLink className="size-3" />
+                              </Link>
+                            </div>
+                            <div className="flex items-center gap-3.5">
+                              {selectedDealDetail.property.images && selectedDealDetail.property.images.length > 0 ? (
+                                <img
+                                  src={selectedDealDetail.property.images[0].image_url}
+                                  alt={selectedDealDetail.property.title}
+                                  className="size-16 rounded-[14px] object-cover border border-[#EDE8E0] shrink-0"
+                                />
+                              ) : (
+                                <div className="size-16 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex items-center justify-center text-[#8B7D68] shrink-0">
+                                  <Building2 className="size-6" />
+                                </div>
+                              )}
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-[11px] font-semibold text-[#8B7D68] uppercase">
+                                  {selectedDealDetail.property.property_type} · {selectedDealDetail.property.locality}
+                                </span>
+                                <h4 className="font-display font-bold text-[15px] text-[#172124] truncate">
+                                  {selectedDealDetail.property.title}
+                                </h4>
+                                <span className="font-display font-bold text-[14px] text-[#17805B] mt-0.5">
+                                  {formatPriceINR(selectedDealDetail.property.price)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-white rounded-[24px] border border-dashed border-[#EDE8E0] p-5 text-center text-[13px] text-[#717A7D]">
+                            No specific property attached to this deal.
+                          </div>
+                        )}
+
+                        {/* Confidential Broker Notes */}
+                        <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-3">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
-                              Associated Property
+                              Confidential Broker Notes
                             </span>
-                            <Link
-                              to={`/property/${selectedDealDetail.property.id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[12px] font-semibold text-[#172124] hover:text-[#8B7D68] flex items-center gap-1"
+                            <button
+                              type="button"
+                              onClick={() => setEditDealModalOpen(true)}
+                              className="text-[12px] font-semibold text-[#172124] hover:underline"
                             >
-                              <span>View Listing</span>
-                              <ExternalLink className="size-3" />
-                            </Link>
+                              Edit Notes
+                            </button>
                           </div>
-                          <div className="flex items-center gap-3.5">
-                            {selectedDealDetail.property.images && selectedDealDetail.property.images.length > 0 ? (
-                              <img
-                                src={selectedDealDetail.property.images[0].image_url}
-                                alt={selectedDealDetail.property.title}
-                                className="size-16 rounded-[14px] object-cover border border-[#EDE8E0] shrink-0"
-                              />
-                            ) : (
-                              <div className="size-16 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex items-center justify-center text-[#8B7D68] shrink-0">
-                                <Building2 className="size-6" />
-                              </div>
-                            )}
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-[11px] font-semibold text-[#8B7D68] uppercase">
-                                {selectedDealDetail.property.property_type} · {selectedDealDetail.property.locality}
+                          <p className="text-[13px] text-[#717A7D] leading-relaxed bg-[#FAF7F2] p-4 rounded-[14px] border border-[#EDE8E0] whitespace-pre-wrap">
+                            {selectedDealDetail.broker_notes || selectedDealDetail.notes || "No internal deal notes recorded. Document negotiations, client timelines, or legal checks."}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right: Commercial Summary & Document Status */}
+                      <div className="lg:col-span-5 flex flex-col gap-6">
+                        <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-4">
+                          <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                            Financial Breakdown
+                          </span>
+                          <div className="flex flex-col gap-3">
+                            <div className="p-3.5 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex items-center justify-between">
+                              <span className="text-[12.5px] text-[#717A7D]">Agreed Price</span>
+                              <span className="font-display font-bold text-[16px] text-[#172124]">
+                                {selectedDealDetail.agreed_price ? formatPriceINR(selectedDealDetail.agreed_price) : "Pending"}
                               </span>
-                              <h4 className="font-display font-bold text-[15px] text-[#172124] truncate">
-                                {selectedDealDetail.property.title}
-                              </h4>
-                              <span className="font-display font-bold text-[14px] text-[#17805B] mt-0.5">
-                                {formatPriceINR(selectedDealDetail.property.price)}
+                            </div>
+                            <div className="p-3.5 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex items-center justify-between">
+                              <span className="text-[12.5px] text-[#717A7D]">Brokerage Fee</span>
+                              <span className="font-display font-bold text-[16px] text-[#17805B]">
+                                {selectedDealDetail.commission_amount
+                                  ? formatPriceINR(selectedDealDetail.commission_amount)
+                                  : selectedDealDetail.commission_rate
+                                  ? `${selectedDealDetail.commission_rate}%`
+                                  : "Standard"}
+                              </span>
+                            </div>
+                            <div className="p-3.5 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex items-center justify-between">
+                              <span className="text-[12.5px] text-[#717A7D]">Vault Documents</span>
+                              <span className="font-mono font-bold text-[14px] text-[#172124]">
+                                {selectedDealDetail.documents?.length || 0} files stored
+                              </span>
+                            </div>
+                            <div className="p-3.5 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex items-center justify-between">
+                              <span className="text-[12.5px] text-[#717A7D]">Verified Compliance</span>
+                              <span className="font-mono font-bold text-[14px] text-[#17805B]">
+                                {selectedDealDetail.checklist?.filter(c => c.is_complete).length || 0} / {selectedDealDetail.checklist?.length || 0} items
                               </span>
                             </div>
                           </div>
                         </div>
-                      ) : (
-                        <div className="bg-white rounded-[24px] border border-dashed border-[#EDE8E0] p-5 text-center text-[13px] text-[#717A7D]">
-                          No specific property attached to this deal.
-                        </div>
-                      )}
 
-                      {/* Buyer & Seller Parties Card */}
-                      <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-4">
-                        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
-                          Deal Parties
-                        </span>
-
-                        <div className="flex flex-col gap-3">
-                          {/* Buyer */}
-                          <div className="p-4 rounded-[16px] bg-[#FAF7F2] border border-[#EDE8E0] flex flex-col gap-1">
-                            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
-                              Buyer
+                        {/* Quick Parties Summary Card */}
+                        <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-4">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                              Deal Parties
                             </span>
-                            <span className="font-display font-bold text-[15px] text-[#172124]">
-                              {selectedDealDetail.buyer_name || "Buyer name not recorded"}
-                            </span>
-                            {selectedDealDetail.buyer_contact && (
-                              <span className="text-[12.5px] text-[#717A7D]">
-                                {selectedDealDetail.buyer_contact}
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => setEditPartiesModalOpen(true)}
+                              className="text-[12px] font-semibold text-[#172124] hover:underline"
+                            >
+                              Edit
+                            </button>
                           </div>
-
-                          {/* Seller */}
-                          <div className="p-4 rounded-[16px] bg-[#FAF7F2] border border-[#EDE8E0] flex flex-col gap-1">
-                            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
-                              Seller
-                            </span>
-                            <span className="font-display font-bold text-[15px] text-[#172124]">
-                              {selectedDealDetail.seller_name || "Seller name not recorded"}
-                            </span>
-                            {selectedDealDetail.seller_contact && (
-                              <span className="text-[12.5px] text-[#717A7D]">
-                                {selectedDealDetail.seller_contact}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="p-3.5 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0]">
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Buyer</span>
+                              <span className="font-bold text-[13.5px] text-[#172124] block mt-0.5 truncate">
+                                {selectedDealDetail.buyer?.name || selectedDealDetail.buyer_name || "Not recorded"}
                               </span>
-                            )}
+                              <span className="text-[12px] text-[#717A7D] block truncate">
+                                {selectedDealDetail.buyer?.phone || (selectedDealDetail as any).buyer_phone || "No phone"}
+                              </span>
+                            </div>
+                            <div className="p-3.5 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0]">
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Seller</span>
+                              <span className="font-bold text-[13.5px] text-[#172124] block mt-0.5 truncate">
+                                {selectedDealDetail.seller?.name || selectedDealDetail.seller_name || "Not recorded"}
+                              </span>
+                              <span className="text-[12px] text-[#717A7D] block truncate">
+                                {selectedDealDetail.seller?.phone || (selectedDealDetail as any).seller_phone || "No phone"}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-
-                      {/* Broker Notes Card */}
-                      <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
-                            Confidential Broker Notes
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setEditDealModalOpen(true)}
-                            className="text-[12px] font-semibold text-[#172124] hover:underline"
-                          >
-                            Edit
-                          </button>
-                        </div>
-                        <p className="text-[13px] text-[#717A7D] leading-relaxed bg-[#FAF7F2] p-4 rounded-[14px] border border-[#EDE8E0] whitespace-pre-wrap">
-                          {selectedDealDetail.broker_notes || "No internal deal notes recorded. Click 'Edit' to document negotiations, client timelines, or legal checks."}
-                        </p>
                       </div>
                     </div>
+                  )}
 
-                    {/* Right Column: Deal Document Vault (7 cols) */}
-                    <div className="lg:col-span-7 bg-white rounded-[24px] border border-[#EDE8E0] p-6 sm:p-7 shadow-xs flex flex-col gap-5">
+                  {/* ══════════ TAB 2: DOCUMENT VAULT ══════════ */}
+                  {dealWorkspaceTab === "documents" && (
+                    <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 sm:p-7 shadow-xs flex flex-col gap-5">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#EDE8E0]">
                         <div>
                           <div className="flex items-center gap-2 text-[#17805B] text-[12px] font-semibold">
@@ -3231,17 +3581,29 @@ export default function BrokerPortal() {
                           </p>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadDocModalOpen(true);
-                            setUploadDealDocError(null);
-                          }}
-                          className="px-4 py-2.5 rounded-full text-white font-semibold text-[13px] shadow-xs flex items-center gap-2 cursor-pointer shrink-0 bg-[#172124] hover:bg-[#2C383C]"
-                        >
-                          <UploadCloud className="size-4 text-[#C9AD86]" />
-                          <span>Upload Document</span>
-                        </button>
+                        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={handleOpenPrintPackModal}
+                            className="px-4 py-2.5 rounded-full border border-[#EDE8E0] bg-[#FAF7F2] text-[#172124] hover:bg-[#F2ECE4] font-semibold text-[13px] shadow-2xs flex items-center gap-2 cursor-pointer transition-all"
+                            title="Assemble selected documents into a clean printable A4 PDF"
+                          >
+                            <Printer className="size-4 text-[#172124]" />
+                            <span>Prepare Print Pack</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUploadDocModalOpen(true);
+                              setUploadDealDocError(null);
+                            }}
+                            className="px-4 py-2.5 rounded-full text-white font-semibold text-[13px] shadow-xs flex items-center gap-2 cursor-pointer bg-[#172124] hover:bg-[#2C383C]"
+                          >
+                            <UploadCloud className="size-4 text-[#C9AD86]" />
+                            <span>Upload Document</span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* Category Filter Pills */}
@@ -3282,10 +3644,20 @@ export default function BrokerPortal() {
                                 <FileText className="size-5" />
                               </div>
                               <div className="flex flex-col min-w-0">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider ${DOC_CATEGORY_META[doc.category]?.bg || "bg-gray-100 text-gray-800"}`}>
                                     {DOC_CATEGORY_META[doc.category]?.label || doc.category}
                                   </span>
+                                  {doc.party && (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider bg-purple-50 text-purple-700 border-purple-200">
+                                      {doc.party}
+                                    </span>
+                                  )}
+                                  {doc.document_side && doc.document_side !== "complete" && (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider bg-slate-100 text-slate-700 border-slate-200">
+                                      {doc.document_side}
+                                    </span>
+                                  )}
                                   <span className="text-[11px] text-[#717A7D] font-mono">
                                     {(doc.file_size / 1024).toFixed(1)} KB
                                   </span>
@@ -3300,10 +3672,25 @@ export default function BrokerPortal() {
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
+                              {/* Verification Toggle */}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleDocVerification(doc)}
+                                className={`px-3 py-1.5 rounded-full border text-[11.5px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                                  doc.is_verified
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+                                    : "bg-white text-[#717A7D] border-[#EDE8E0] hover:bg-amber-50 hover:text-amber-800"
+                                }`}
+                                title={doc.is_verified ? "Document verified by broker. Click to unverify." : "Click to mark verified"}
+                              >
+                                <CheckCircle2 className={`size-3.5 ${doc.is_verified ? "text-[#17805B]" : "text-gray-400"}`} />
+                                <span>{doc.is_verified ? "Verified" : "Verify"}</span>
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => handleDownloadDealDoc(doc)}
-                                className="px-3.5 py-1.5 rounded-full bg-white border border-[#EDE8E0] text-[#172124] hover:bg-[#FAF7F2] text-[12px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                                className="px-3 py-1.5 rounded-full bg-white border border-[#EDE8E0] text-[#172124] hover:bg-[#FAF7F2] text-[12px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
                                 title="View / Download Document"
                               >
                                 <Download className="size-3.5 text-[#17805B]" />
@@ -3346,7 +3733,315 @@ export default function BrokerPortal() {
                         )}
                       </div>
                     </div>
-                  </div>
+                  )}
+
+                  {/* ══════════ TAB 3: VERIFICATION & CHECKLIST ══════════ */}
+                  {dealWorkspaceTab === "verification" && (
+                    <div className="flex flex-col gap-6">
+                      {/* Top Action Bar */}
+                      <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2 text-[#C9AD86] text-[11px] font-mono font-bold uppercase tracking-[0.2em] mb-1">
+                            <ListChecks className="size-3.5" />
+                            <span>Goa Real Estate Compliance</span>
+                          </div>
+                          <h3 className="font-display font-bold text-[20px] text-[#172124]">
+                            Document Checklist & Tokenized Requests
+                          </h3>
+                          <p className="text-[12.5px] text-[#717A7D]">
+                            Match required title and identity documents against vault uploads, or issue secure client upload links.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreateUploadReqModalOpen(true);
+                            setGeneratedLink(null);
+                            setReqSelectedDocs([]);
+                            setReqMessage("");
+                          }}
+                          className="px-4 py-2.5 rounded-full text-white font-semibold text-[13px] shadow-xs flex items-center gap-2 cursor-pointer shrink-0 bg-[#172124] hover:bg-[#2C383C]"
+                        >
+                          <Link2 className="size-4 text-[#C9AD86]" />
+                          <span>Request Client Documents</span>
+                        </button>
+                      </div>
+
+                      {/* Checklist Grid */}
+                      <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-4">
+                        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                          Statutory Document Checklist
+                        </span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {(selectedDealDetail.checklist || []).map((item) => (
+                            <div
+                              key={item.id}
+                              className={`p-4 rounded-[16px] border transition-all flex items-start justify-between gap-3 ${
+                                item.is_complete
+                                  ? "bg-emerald-50/50 border-emerald-200"
+                                  : "bg-[#FAF7F2] border-[#EDE8E0]"
+                              }`}
+                            >
+                              <div className="flex items-start gap-3 min-w-0">
+                                <div className={`size-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                                  item.is_complete
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-gray-200 text-gray-400"
+                                }`}>
+                                  <Check className="size-3.5" />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-[13.5px] text-[#172124]">
+                                      {item.title}
+                                    </span>
+                                    <span className="px-2 py-0.2 rounded-full text-[9.5px] font-mono font-bold uppercase tracking-wider bg-white border border-[#EDE8E0] text-[#8B7D68]">
+                                      {item.party}
+                                    </span>
+                                  </div>
+                                  <span className="text-[11.5px] text-[#717A7D] mt-0.5">
+                                    {item.description}
+                                  </span>
+                                  {item.matching_document_id && (
+                                    <span className="text-[10.5px] font-mono text-[#17805B] mt-1 flex items-center gap-1">
+                                      <FileCheck className="size-3" />
+                                      <span>Matched in Vault {item.is_verified ? "(Verified)" : "(Pending Verification)"}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <span className={`px-2.5 py-1 rounded-full text-[10.5px] font-bold uppercase tracking-wider shrink-0 ${
+                                item.is_complete
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-amber-50 text-amber-800 border border-amber-200"
+                              }`}>
+                                {item.is_complete ? "Complete" : "Pending"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Active Upload Requests Table */}
+                      <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 shadow-xs flex flex-col gap-4">
+                        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                          Client Upload Request Links ({dealUploadRequests.length})
+                        </span>
+                        {dealUploadRequests.length === 0 ? (
+                          <div className="p-8 text-center text-[13px] text-[#717A7D] border border-dashed border-[#EDE8E0] rounded-[16px]">
+                            No client document request links generated yet for this deal.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-[12.5px]">
+                              <thead>
+                                <tr className="border-b border-[#EDE8E0] text-[10.5px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                                  <th className="py-2.5 px-3">Party</th>
+                                  <th className="py-2.5 px-3">Requested Documents</th>
+                                  <th className="py-2.5 px-3">Status</th>
+                                  <th className="py-2.5 px-3">Expires</th>
+                                  <th className="py-2.5 px-3 text-right">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {dealUploadRequests.map((req) => (
+                                  <tr key={req.id} className="border-b border-[#EDE8E0] last:border-b-0 hover:bg-[#FAF7F2]">
+                                    <td className="py-3 px-3 capitalize font-bold text-[#172124]">
+                                      {req.party}
+                                    </td>
+                                    <td className="py-3 px-3 text-[#717A7D]">
+                                      {req.requested_docs.join(", ")}
+                                    </td>
+                                    <td className="py-3 px-3">
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                        req.status === "active"
+                                          ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                                          : req.status === "expired"
+                                          ? "bg-amber-50 text-amber-800 border border-amber-200"
+                                          : "bg-rose-50 text-rose-800 border border-rose-200"
+                                      }`}>
+                                        {req.status}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3 text-[#717A7D] font-mono text-[11px]">
+                                      {new Date(req.expires_at).toLocaleDateString()}
+                                    </td>
+                                    <td className="py-3 px-3 text-right">
+                                      {req.status === "active" && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRevokeUploadLink(req.id)}
+                                          className="text-red-600 hover:text-red-800 font-semibold text-[11.5px] cursor-pointer"
+                                        >
+                                          Revoke Link
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ══════════ TAB 4: CLIENT PARTIES & CRM ══════════ */}
+                  {dealWorkspaceTab === "parties" && (
+                    <div className="flex flex-col gap-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-display font-bold text-[20px] text-[#172124]">
+                            Deal Parties & Contacts
+                          </h3>
+                          <p className="text-[12.5px] text-[#717A7D]">
+                            Direct buyer and seller communications, addresses, and transaction notes.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditPartiesModalOpen(true)}
+                          className="px-4 py-2 rounded-full border border-[#EDE8E0] text-[#172124] hover:bg-[#FAF7F2] text-[12.5px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Edit3 className="size-3.5 text-[#8B7D68]" />
+                          <span>Edit Party Records</span>
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Buyer Card */}
+                        <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 sm:p-7 shadow-xs flex flex-col gap-4">
+                          <div className="flex items-center justify-between pb-3 border-b border-[#EDE8E0]">
+                            <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                              Buyer Information
+                            </span>
+                            {(selectedDealDetail.buyer?.phone || (selectedDealDetail as any).buyer_phone) && (
+                              <div className="flex items-center gap-2">
+                                <a
+                                  href={`https://wa.me/${(selectedDealDetail.buyer?.phone || (selectedDealDetail as any).buyer_phone).replace(/\D/g, "")}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="size-8 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center hover:bg-emerald-100 transition-colors"
+                                  title="WhatsApp Buyer"
+                                >
+                                  <MessageSquare className="size-4" />
+                                </a>
+                                <a
+                                  href={`tel:${(selectedDealDetail.buyer?.phone || (selectedDealDetail as any).buyer_phone).replace(/\s+/g, "")}`}
+                                  className="size-8 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                                  title="Call Buyer"
+                                >
+                                  <Phone className="size-4" />
+                                </a>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col gap-2.5">
+                            <div>
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Full Name</span>
+                              <span className="font-display font-bold text-[16px] text-[#172124]">
+                                {selectedDealDetail.buyer?.name || selectedDealDetail.buyer_name || "Buyer name not recorded"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Phone</span>
+                              <span className="text-[13px] text-[#172124] font-mono">
+                                {selectedDealDetail.buyer?.phone || (selectedDealDetail as any).buyer_phone || "Not recorded"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Email</span>
+                              <span className="text-[13px] text-[#172124]">
+                                {selectedDealDetail.buyer?.email || (selectedDealDetail as any).buyer_email || "Not recorded"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Address / Origin</span>
+                              <span className="text-[13px] text-[#717A7D]">
+                                {selectedDealDetail.buyer?.address || (selectedDealDetail as any).buyer_address || "Not recorded"}
+                              </span>
+                            </div>
+                            {((selectedDealDetail.buyer as any)?.notes || (selectedDealDetail as any).buyer_notes) && (
+                              <div className="mt-2 p-3 rounded-[12px] bg-[#FAF7F2] border border-[#EDE8E0]">
+                                <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Buyer Notes</span>
+                                <p className="text-[12.5px] text-[#717A7D] mt-1">
+                                  {(selectedDealDetail.buyer as any)?.notes || (selectedDealDetail as any).buyer_notes}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Seller Card */}
+                        <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 sm:p-7 shadow-xs flex flex-col gap-4">
+                          <div className="flex items-center justify-between pb-3 border-b border-[#EDE8E0]">
+                            <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68]">
+                              Seller Information
+                            </span>
+                            {(selectedDealDetail.seller?.phone || (selectedDealDetail as any).seller_phone) && (
+                              <div className="flex items-center gap-2">
+                                <a
+                                  href={`https://wa.me/${(selectedDealDetail.seller?.phone || (selectedDealDetail as any).seller_phone).replace(/\D/g, "")}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="size-8 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center hover:bg-emerald-100 transition-colors"
+                                  title="WhatsApp Seller"
+                                >
+                                  <MessageSquare className="size-4" />
+                                </a>
+                                <a
+                                  href={`tel:${(selectedDealDetail.seller?.phone || (selectedDealDetail as any).seller_phone).replace(/\s+/g, "")}`}
+                                  className="size-8 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                                  title="Call Seller"
+                                >
+                                  <Phone className="size-4" />
+                                </a>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col gap-2.5">
+                            <div>
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Full Name</span>
+                              <span className="font-display font-bold text-[16px] text-[#172124]">
+                                {selectedDealDetail.seller?.name || selectedDealDetail.seller_name || "Seller name not recorded"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Phone</span>
+                              <span className="text-[13px] text-[#172124] font-mono">
+                                {selectedDealDetail.seller?.phone || (selectedDealDetail as any).seller_phone || "Not recorded"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Email</span>
+                              <span className="text-[13px] text-[#172124]">
+                                {selectedDealDetail.seller?.email || (selectedDealDetail as any).seller_email || "Not recorded"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Address / Origin</span>
+                              <span className="text-[13px] text-[#717A7D]">
+                                {selectedDealDetail.seller?.address || (selectedDealDetail as any).seller_address || "Not recorded"}
+                              </span>
+                            </div>
+                            {((selectedDealDetail.seller as any)?.notes || (selectedDealDetail as any).seller_notes) && (
+                              <div className="mt-2 p-3 rounded-[12px] bg-[#FAF7F2] border border-[#EDE8E0]">
+                                <span className="text-[10px] font-mono uppercase font-bold text-[#8B7D68] block">Seller Notes</span>
+                                <p className="text-[12.5px] text-[#717A7D] mt-1">
+                                  {(selectedDealDetail.seller as any)?.notes || (selectedDealDetail as any).seller_notes}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 /* ── DEALS LIST VIEW ── */
@@ -3886,458 +4581,8 @@ export default function BrokerPortal() {
               </div>
             </div>
           )}
-
           {/* ══════════════════════════════════════════════════════════════════
-              TAB 8: AI PROPERTY VALUATION ENGINE (BROKER TOOL)
-          ══════════════════════════════════════════════════════════════════ */}
-          {activeTab === "valuation" && (
-            <div className="flex flex-col gap-6 animate-in fade-in duration-200">
-              
-              {/* Header Card */}
-              <div className="bg-white p-6 sm:p-7 rounded-[24px] border border-[#EDE8E0] flex flex-wrap items-center justify-between gap-4 shadow-xs">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-[#8B7D68]">
-                      Private Broker Estimator
-                    </span>
-                  </div>
-                  <h2 className="font-display font-bold text-[22px] text-[#172124] tracking-tight">
-                    Property Valuation Engine
-                  </h2>
-                  <p className="text-[13px] text-[#717A7D] mt-0.5 max-w-2xl">
-                    Internal price range forecasting trained on approximate Goa real estate locality baselines and property parameters.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-[11.5px] font-mono font-medium text-[#8B7D68] bg-[#FAF7F2] px-3.5 py-1.5 rounded-full border border-[#EDE8E0]">
-                    Kassim Shaikh Advisory Desk
-                  </span>
-                </div>
-              </div>
-
-              {valuationError && (
-                <div className="p-4 rounded-[16px] bg-red-50 text-red-800 border border-red-200 text-[13px] flex items-center gap-2.5">
-                  <AlertCircle className="size-4.5 text-red-600 shrink-0" />
-                  <span>{valuationError}</span>
-                </div>
-              )}
-
-              {/* Main Estimation Grid: Form (Left) & Result (Right) */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                
-                {/* Form Card */}
-                <div className="lg:col-span-7 bg-white rounded-[24px] border border-[#EDE8E0] p-6 sm:p-7 shadow-xs">
-                  <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-4 mb-5">
-                    <div className="flex items-center gap-2">
-                      <SlidersHorizontal className="size-4 text-[#8B7D68]" />
-                      <h3 className="font-display font-bold text-[16px] text-[#172124]">
-                        Property Specifications
-                      </h3>
-                    </div>
-                    <span className="text-[11.5px] text-[#717A7D]">All fields market-adjusted</span>
-                  </div>
-
-                  <form onSubmit={handleEstimatePrice} className="flex flex-col gap-4">
-                    
-                    {/* Locality & Region */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Locality / Village
-                        </label>
-                        <select
-                          value={valuationForm.locality}
-                          onChange={(e) => setValuationForm({ ...valuationForm, locality: e.target.value })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        >
-                          <optgroup label="North Goa — Coastal Belt">
-                            <option value="Calangute">Calangute</option>
-                            <option value="Baga">Baga</option>
-                            <option value="Candolim">Candolim</option>
-                            <option value="Sinquerim">Sinquerim</option>
-                            <option value="Anjuna">Anjuna</option>
-                            <option value="Vagator">Vagator</option>
-                            <option value="Assagao">Assagao</option>
-                            <option value="Siolim">Siolim</option>
-                            <option value="Morjim">Morjim</option>
-                          </optgroup>
-                          <optgroup label="North Goa — Inland & Capital">
-                            <option value="Panjim">Panjim</option>
-                            <option value="Miramar">Miramar</option>
-                            <option value="Dona Paula">Dona Paula</option>
-                            <option value="Caranzalem">Caranzalem</option>
-                            <option value="Porvorim">Porvorim</option>
-                            <option value="Saligao">Saligao</option>
-                            <option value="Pilerne">Pilerne</option>
-                            <option value="Mapusa">Mapusa</option>
-                            <option value="Aldona">Aldona</option>
-                            <option value="Bicholim">Bicholim</option>
-                          </optgroup>
-                          <optgroup label="South Goa — Coastal Belt">
-                            <option value="Colva">Colva</option>
-                            <option value="Benaulim">Benaulim</option>
-                            <option value="Varca">Varca</option>
-                            <option value="Cavelossim">Cavelossim</option>
-                            <option value="Betalbatim">Betalbatim</option>
-                            <option value="Majorda">Majorda</option>
-                            <option value="Palolem">Palolem</option>
-                            <option value="Agonda">Agonda</option>
-                          </optgroup>
-                          <optgroup label="South Goa — Urban & Industrial">
-                            <option value="Margao">Margao</option>
-                            <option value="Vasco">Vasco</option>
-                            <option value="Dabolim">Dabolim</option>
-                            <option value="Chicalim">Chicalim</option>
-                            <option value="Verna">Verna</option>
-                            <option value="Cortalim">Cortalim</option>
-                            <option value="Curchorem">Curchorem</option>
-                            <option value="Quepem">Quepem</option>
-                            <option value="Sanvordem">Sanvordem</option>
-                            <option value="Sanguem">Sanguem</option>
-                          </optgroup>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Region
-                        </label>
-                        <select
-                          value={valuationForm.region}
-                          onChange={(e) => setValuationForm({ ...valuationForm, region: e.target.value })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        >
-                          <option value="north_goa">North Goa</option>
-                          <option value="south_goa">South Goa</option>
-                          <option value="central_goa">Central Goa</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Property Type & Area */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Property Type
-                        </label>
-                        <select
-                          value={valuationForm.property_type}
-                          onChange={(e) => setValuationForm({ ...valuationForm, property_type: e.target.value })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        >
-                          <option value="villa">Luxury Villa</option>
-                          <option value="flat">Apartment / Flat</option>
-                          <option value="bungalow">Independent Bungalow</option>
-                          <option value="plot">Land / Plot</option>
-                          <option value="commercial">Commercial Space</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Built-up Area (sq. ft.)
-                        </label>
-                        <input
-                          type="number"
-                          required
-                          min={100}
-                          max={50000}
-                          value={valuationForm.area_sqft}
-                          onChange={(e) => setValuationForm({ ...valuationForm, area_sqft: Number(e.target.value) })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Bedrooms & Age */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Bedrooms (BHK)
-                        </label>
-                        <select
-                          value={valuationForm.bedrooms}
-                          onChange={(e) => setValuationForm({ ...valuationForm, bedrooms: Number(e.target.value) })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        >
-                          <option value={1}>1 BHK</option>
-                          <option value={2}>2 BHK</option>
-                          <option value={3}>3 BHK</option>
-                          <option value={4}>4 BHK</option>
-                          <option value={5}>5+ BHK</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Furnishing
-                        </label>
-                        <select
-                          value={valuationForm.furnished}
-                          onChange={(e) => setValuationForm({ ...valuationForm, furnished: e.target.value })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        >
-                          <option value="furnished">Fully Furnished</option>
-                          <option value="semi-furnished">Semi-Furnished</option>
-                          <option value="unfurnished">Unfurnished</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Age (Years)
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={50}
-                          value={valuationForm.age_years}
-                          onChange={(e) => setValuationForm({ ...valuationForm, age_years: Number(e.target.value) })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Proximity & Floor */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Beach Dist. (km)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min={0}
-                          max={50}
-                          value={valuationForm.beach_distance_km}
-                          onChange={(e) => setValuationForm({ ...valuationForm, beach_distance_km: Number(e.target.value) })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Mopa Airport (km)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min={1}
-                          max={100}
-                          value={valuationForm.mopa_airport_km}
-                          onChange={(e) => setValuationForm({ ...valuationForm, mopa_airport_km: Number(e.target.value) })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
-                          Floor Number
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={30}
-                          value={valuationForm.floor_number}
-                          onChange={(e) => setValuationForm({ ...valuationForm, floor_number: Number(e.target.value) })}
-                          className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white transition-all font-sans"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-[#EDE8E0] flex items-center justify-end">
-                      <button
-                        type="submit"
-                        disabled={valuationLoading}
-                        className="w-full sm:w-auto px-7 py-3 rounded-full bg-[#172124] hover:bg-[#2C383C] text-white font-semibold text-[13.5px] shadow-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        {valuationLoading ? (
-                          <>
-                            <RefreshCw className="size-4 animate-spin" />
-                            <span>Computing Market Range...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Calculator className="size-4" />
-                            <span>Run Price Valuation</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-
-                {/* Result Card */}
-                <div className="lg:col-span-5 flex flex-col gap-6">
-                  {valuationResult ? (
-                    <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-6 sm:p-7 shadow-xs flex flex-col gap-5 animate-in fade-in duration-200">
-                      <div className="flex items-center justify-between border-b border-[#EDE8E0] pb-3.5">
-                        <span className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-[#8B7D68]">
-                          Estimated Market Valuation
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-[#17805B] border border-emerald-200">
-                          {valuationResult.locality_known ? "Locality Benchmark Match" : "Regional Baseline"}
-                        </span>
-                      </div>
-
-                      {/* Primary Mid Estimate Display */}
-                      <div className="p-5 rounded-[18px] bg-gradient-to-br from-[#172124] to-[#243034] text-white flex flex-col gap-1.5 shadow-md">
-                        <span className="text-[11.5px] uppercase tracking-wider text-white/70 font-mono">
-                          Suggested Market Anchor (Mid)
-                        </span>
-                        <div className="text-[30px] sm:text-[34px] font-display font-bold text-white tracking-tight">
-                          {formatPriceINR(valuationResult.estimated_mid)}
-                        </div>
-                        <div className="flex items-center justify-between text-[12px] text-white/80 pt-2 border-t border-white/10 mt-1">
-                          <span>Approx. Per Sq.Ft. Rate</span>
-                          <span className="font-mono font-semibold text-[#C9AD86]">
-                            ₹{valuationResult.price_per_sqft_approx.toLocaleString("en-IN")}/sqft
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Low and High Range */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="p-4 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex flex-col gap-1">
-                          <span className="text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider">
-                            Conservative (Low)
-                          </span>
-                          <span className="font-display font-bold text-[18px] text-[#172124]">
-                            {formatPriceINR(valuationResult.estimated_low)}
-                          </span>
-                          <span className="text-[11px] text-[#717A7D]">Fast liquidity bound</span>
-                        </div>
-
-                        <div className="p-4 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex flex-col gap-1">
-                          <span className="text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider">
-                            Optimistic (High)
-                          </span>
-                          <span className="font-display font-bold text-[18px] text-[#172124]">
-                            {formatPriceINR(valuationResult.estimated_high)}
-                          </span>
-                          <span className="text-[11px] text-[#717A7D]">Premium demand bound</span>
-                        </div>
-                      </div>
-
-                      {/* Model Confidence */}
-                      <div className="p-4 rounded-[14px] bg-[#FAF7F2] border border-[#EDE8E0] flex flex-col gap-2">
-                        <div className="flex items-center justify-between text-[12.5px]">
-                          <span className="font-semibold text-[#172124]">Model Confidence Score</span>
-                          <span className="font-mono font-bold text-[#17805B]">
-                            {(valuationResult.confidence_score * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-[#EDE8E0] h-2 rounded-full overflow-hidden">
-                          <div
-                            className="bg-[#17805B] h-full rounded-full transition-all duration-500"
-                            style={{ width: `${valuationResult.confidence_score * 100}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Advisory Disclaimer */}
-                      <p className="text-[12px] text-[#717A7D] leading-relaxed italic bg-[#FAF7F2] p-3.5 rounded-[12px] border border-[#EDE8E0]">
-                        "{valuationResult.note}"
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="bg-white rounded-[24px] border border-[#EDE8E0] p-8 text-center flex flex-col items-center justify-center gap-3 min-h-[360px] shadow-xs">
-                      <div className="size-12 rounded-full bg-[#FAF7F2] border border-[#EDE8E0] flex items-center justify-center text-[#8B7D68]">
-                        <Calculator className="size-6" />
-                      </div>
-                      <h4 className="font-display font-bold text-[17px] text-[#172124]">
-                        Ready for Market Estimation
-                      </h4>
-                      <p className="text-[12.5px] text-[#717A7D] max-w-xs leading-relaxed">
-                        Configure property specifications on the left and run the estimation to generate instant pricing bands.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-
-              {/* Valuation History Log */}
-              <div className="bg-white rounded-[24px] border border-[#EDE8E0] shadow-xs overflow-hidden">
-                <div className="p-5 sm:p-6 border-b border-[#EDE8E0] flex items-center justify-between flex-wrap gap-3">
-                  <div>
-                    <h3 className="font-display font-bold text-[18px] text-[#172124]">
-                      Valuation History Log ({valuationHistory.length})
-                    </h3>
-                    <p className="text-[12.5px] text-[#717A7D] mt-0.5">
-                      Persisted records of past pricing estimates conducted from the broker desk.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleRefreshValuationHistory}
-                    disabled={historyLoading}
-                    className="px-3.5 py-1.5 rounded-full border border-[#EDE8E0] hover:bg-[#FAF7F2] text-[#172124] text-[12px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <RefreshCw className={`size-3.5 ${historyLoading ? "animate-spin" : ""}`} />
-                    <span>Refresh Log</span>
-                  </button>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-[13px]">
-                    <thead className="bg-[#FAF7F2] border-b border-[#EDE8E0] text-[#8B7D68] text-[11px] font-mono uppercase tracking-wider">
-                      <tr>
-                        <th className="py-3.5 px-5 font-semibold">Date & Time</th>
-                        <th className="py-3.5 px-4 font-semibold">Locality</th>
-                        <th className="py-3.5 px-4 font-semibold">Type & Area</th>
-                        <th className="py-3.5 px-4 font-semibold">Suggested Mid</th>
-                        <th className="py-3.5 px-4 font-semibold">Estimated Range</th>
-                        <th className="py-3.5 px-5 text-right font-semibold">Confidence</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#EDE8E0]/60">
-                      {valuationHistory.map((item) => (
-                        <tr key={item.id} className="hover:bg-[#FAF7F2] transition-colors">
-                          <td className="py-3.5 px-5">
-                            <span className="font-mono text-[12px] text-[#172124]">
-                              {new Date(item.created_at).toLocaleDateString("en-IN", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 font-semibold text-[#172124]">
-                            {item.locality}
-                          </td>
-                          <td className="py-3.5 px-4 text-[#717A7D]">
-                            <span className="capitalize">{item.property_type}</span> · {item.area_sqft} sqft
-                          </td>
-                          <td className="py-3.5 px-4 font-display font-bold text-[#172124]">
-                            {formatPriceINR(item.estimated_mid)}
-                          </td>
-                          <td className="py-3.5 px-4 text-[12px] text-[#717A7D]">
-                            {formatPriceINR(item.estimated_low)} – {formatPriceINR(item.estimated_high)}
-                          </td>
-                          <td className="py-3.5 px-5 text-right font-mono font-semibold text-[#17805B]">
-                            {(item.confidence_score * 100).toFixed(0)}%
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {valuationHistory.length === 0 && (
-                  <div className="p-12 text-center text-gray-400">
-                    {historyLoading ? "Loading valuation records..." : "No property valuations recorded in history yet."}
-                  </div>
-                )}
-              </div>
-
-            </div>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════════════
-              TAB 9: BROKER PROFILE & SETTINGS
+              TAB 8: BROKER PROFILE & SETTINGS
           ══════════════════════════════════════════════════════════════════ */}
           {activeTab === "profile" && (
             <div className="max-w-[760px] mx-auto w-full flex flex-col gap-6 animate-in fade-in duration-200">
@@ -4601,56 +4846,6 @@ export default function BrokerPortal() {
                 </button>
               </div>
 
-              {/* Private Property Legal Documents */}
-              <div className="p-4 rounded-[16px] bg-[#FAF7F2] border border-[#EDE8E0] flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="size-4 text-[#8B7D68]" />
-                    <span className="text-[10.5px] font-mono uppercase font-bold text-[#8B7D68] tracking-wider">
-                      Seller Legal Documents ({propertyDocuments.length})
-                    </span>
-                  </div>
-                  <span className="text-[10.5px] font-mono uppercase text-[#717A7D] font-semibold">
-                    Confidential Vault
-                  </span>
-                </div>
-
-                {loadingPropertyDocs ? (
-                  <div className="py-2.5 text-center text-xs text-[#717A7D] font-mono">
-                    Loading attached documents...
-                  </div>
-                ) : propertyDocuments.length === 0 ? (
-                  <div className="py-2.5 px-3 rounded-[10px] bg-white border border-[#EDE8E0] text-[12px] text-gray-400 text-center">
-                    No legal documents attached to this property listing.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {propertyDocuments.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="p-3 rounded-[12px] border border-[#EDE8E0] bg-white flex items-center justify-between gap-3 shadow-2xs"
-                      >
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-semibold text-[13px] text-[#172124] truncate">
-                            {doc.title}
-                          </span>
-                          <span className="text-[10.5px] text-[#8B7D68] font-mono uppercase font-semibold">
-                            {doc.doc_type} • {(doc.file_size / 1024).toFixed(1)} KB
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleBrokerDownloadSellerDoc(doc.id, doc.original_filename)}
-                          className="px-3 py-1.5 rounded-full bg-[#172124] text-white text-[11px] font-semibold hover:bg-[#2C383C] transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
-                        >
-                          <Download className="size-3.5" />
-                          <span>Download</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
               <div>
                 <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">Title</label>
@@ -4857,40 +5052,6 @@ export default function BrokerPortal() {
             </div>
 
             <div className="p-7 overflow-y-auto flex flex-col gap-6">
-              {/* Document Vault */}
-              <div>
-                <h4 className="font-display font-bold text-[16px] text-[#172124] mb-3.5 flex items-center gap-2">
-                  <ShieldCheck className="size-4.5 text-[#8B7D68]" />
-                  <span>Private Legal Documents ({selectedSeller.documents.length})</span>
-                </h4>
-
-                {selectedSeller.documents.length === 0 ? (
-                  <div className="p-6 rounded-[14px] bg-[#FAF7F2] text-center text-[13px] text-gray-400 border border-[#EDE8E0]">
-                    No documents uploaded by this seller yet.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    {selectedSeller.documents.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="p-4 rounded-[14px] border border-[#EDE8E0] bg-[#FAF7F2] flex items-center justify-between gap-3"
-                      >
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-semibold text-[13.5px] text-[#172124] truncate">{doc.title}</span>
-                          <span className="text-[11px] text-[#8B7D68] font-mono uppercase font-semibold">{doc.doc_type}</span>
-                        </div>
-                        <button
-                          onClick={() => handleBrokerDownloadSellerDoc(doc.id, doc.original_filename)}
-                          className="px-3.5 py-1.5 rounded-full bg-[#172124] text-white text-[11.5px] font-semibold hover:bg-[#2C383C] transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
-                        >
-                          <Download className="size-3.5" />
-                          <span>Download</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
               {/* Submissions */}
               <div>
@@ -5833,6 +5994,39 @@ export default function BrokerPortal() {
                 </select>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
+                    Associated Party
+                  </label>
+                  <select
+                    value={uploadDocParty}
+                    onChange={(e) => setUploadDocParty(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                  >
+                    <option value="property">Property / Asset</option>
+                    <option value="buyer">Buyer</option>
+                    <option value="seller">Seller</option>
+                    <option value="joint">Joint Agreement</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
+                    Document Side
+                  </label>
+                  <select
+                    value={uploadDocSide}
+                    onChange={(e) => setUploadDocSide(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13.5px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                  >
+                    <option value="complete">Complete Document / All Pages</option>
+                    <option value="front">Front Page / Side</option>
+                    <option value="back">Back Page / Side</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
                   Document Title *
@@ -5949,6 +6143,758 @@ export default function BrokerPortal() {
               >
                 {deleteDealDocLoading ? "Deleting..." : "Confirm Delete"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: EDIT DEAL PARTIES ───────────────────────────────────────── */}
+      {editPartiesModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[24px] max-w-[680px] w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#EDE8E0]">
+            <div className="px-7 py-5 border-b border-[#EDE8E0] flex items-center justify-between bg-[#FAF7F2]">
+              <div>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#8B7D68] block">
+                  [ Client CRM ]
+                </span>
+                <h3 className="font-display font-bold text-[18px] text-[#172124]">
+                  Edit Deal Parties & Direct Contacts
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditPartiesModalOpen(false)}
+                className="size-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer"
+              >
+                <X className="size-4.5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePartiesSubmit} className="flex flex-col flex-1 overflow-y-auto">
+              <div className="p-7 flex flex-col gap-6">
+                {/* Buyer Section */}
+                <div className="flex flex-col gap-3">
+                  <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68] border-b border-[#EDE8E0] pb-1">
+                    Buyer Information
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                        Buyer Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editPartyData.buyer_name}
+                        onChange={(e) => setEditPartyData({ ...editPartyData, buyer_name: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                        placeholder="e.g. Vikramaditya Rao"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                        Buyer Phone
+                      </label>
+                      <input
+                        type="text"
+                        value={editPartyData.buyer_phone}
+                        onChange={(e) => setEditPartyData({ ...editPartyData, buyer_phone: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                        placeholder="+91 98200 12345"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                        Buyer Email
+                      </label>
+                      <input
+                        type="email"
+                        value={editPartyData.buyer_email}
+                        onChange={(e) => setEditPartyData({ ...editPartyData, buyer_email: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                        placeholder="buyer@example.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                        Buyer Address / Origin City
+                      </label>
+                      <input
+                        type="text"
+                        value={editPartyData.buyer_address}
+                        onChange={(e) => setEditPartyData({ ...editPartyData, buyer_address: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                        placeholder="Mumbai, Maharashtra"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                      Buyer Notes
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={editPartyData.buyer_notes}
+                      onChange={(e) => setEditPartyData({ ...editPartyData, buyer_notes: e.target.value })}
+                      className="w-full p-3 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                      placeholder="KYC verified, NRI paperwork pending..."
+                    />
+                  </div>
+                </div>
+
+                {/* Seller Section */}
+                <div className="flex flex-col gap-3">
+                  <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68] border-b border-[#EDE8E0] pb-1">
+                    Seller Information
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                        Seller Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editPartyData.seller_name}
+                        onChange={(e) => setEditPartyData({ ...editPartyData, seller_name: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                        placeholder="e.g. Maria Fernandes"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                        Seller Phone
+                      </label>
+                      <input
+                        type="text"
+                        value={editPartyData.seller_phone}
+                        onChange={(e) => setEditPartyData({ ...editPartyData, seller_phone: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                        placeholder="+91 94220 98765"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                        Seller Email
+                      </label>
+                      <input
+                        type="email"
+                        value={editPartyData.seller_email}
+                        onChange={(e) => setEditPartyData({ ...editPartyData, seller_email: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                        placeholder="seller@example.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                        Seller Address / Property Residence
+                      </label>
+                      <input
+                        type="text"
+                        value={editPartyData.seller_address}
+                        onChange={(e) => setEditPartyData({ ...editPartyData, seller_address: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                        placeholder="Calangute, North Goa"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1">
+                      Seller Notes
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={editPartyData.seller_notes}
+                      onChange={(e) => setEditPartyData({ ...editPartyData, seller_notes: e.target.value })}
+                      className="w-full p-3 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                      placeholder="Title search verified, 7/12 extract on file..."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-7 py-4.5 bg-[#FAF7F2] border-t border-[#EDE8E0] flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditPartiesModalOpen(false)}
+                  className="px-5 py-2 rounded-full border border-[#EDE8E0] text-[13px] font-semibold text-[#172124] hover:bg-white cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={dealSaving}
+                  className="px-6 py-2 rounded-full text-white text-[13px] font-semibold shadow-xs hover:bg-[#2C383C] disabled:opacity-50 cursor-pointer bg-[#172124]"
+                >
+                  {dealSaving ? "Saving..." : "Save Party Records"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: CREATE TOKENIZED UPLOAD REQUEST ─────────────────────────── */}
+      {createUploadReqModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[24px] max-w-[560px] w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#EDE8E0]">
+            <div className="px-7 py-5 border-b border-[#EDE8E0] flex items-center justify-between bg-[#FAF7F2]">
+              <div>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#8B7D68] block">
+                  [ Tokenized Request ]
+                </span>
+                <h3 className="font-display font-bold text-[18px] text-[#172124]">
+                  Request Client Documents
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateUploadReqModalOpen(false)}
+                className="size-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer"
+              >
+                <X className="size-4.5" />
+              </button>
+            </div>
+
+            {generatedLink ? (
+              <div className="p-7 flex flex-col gap-5">
+                <div className="p-4 rounded-[16px] bg-emerald-50 border border-emerald-200 flex items-start gap-3">
+                  <CheckCircle2 className="size-5 text-[#17805B] shrink-0 mt-0.5" />
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[14px] text-emerald-900">
+                      Secure Upload Link Generated
+                    </span>
+                    <p className="text-[12.5px] text-emerald-800 mt-0.5">
+                      Share this private link with your client. They can upload front & back ID scans directly without logging in.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-mono uppercase font-bold text-[#8B7D68]">
+                    Generated Link
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={generatedLink.url}
+                      className="w-full px-3.5 py-2.5 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[12.5px] font-mono text-[#172124] focus:outline-none select-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedLink.url);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2000);
+                      }}
+                      className="px-4 py-2.5 rounded-[12px] bg-[#172124] text-white text-[12.5px] font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer hover:bg-[#2C383C]"
+                    >
+                      {copiedLink ? <Check className="size-4 text-emerald-400" /> : <Copy className="size-4" />}
+                      <span>{copiedLink ? "Copied!" : "Copy"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* WhatsApp Share Button */}
+                {(() => {
+                  const targetPhone = reqParty === "buyer"
+                    ? (selectedDealDetail?.buyer?.phone || (selectedDealDetail as any)?.buyer_phone)
+                    : (selectedDealDetail?.seller?.phone || (selectedDealDetail as any)?.seller_phone);
+                  const targetName = reqParty === "buyer"
+                    ? (selectedDealDetail?.buyer?.name || selectedDealDetail?.buyer_name || "Client")
+                    : (selectedDealDetail?.seller?.name || selectedDealDetail?.seller_name || "Client");
+                  const shareMsg = `Hi ${targetName}, Kassim Shaikh here from Ashiyana Real Estate. Please upload your documents (${reqSelectedDocs.join(", ")}) for deal ${selectedDealDetail?.deal_number} using this secure link: ${generatedLink.url}`;
+
+                  return targetPhone ? (
+                    <a
+                      href={`https://wa.me/${targetPhone.replace(/\D/g, "")}?text=${encodeURIComponent(shareMsg)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 rounded-full bg-[#25D366] hover:bg-[#1EBE5D] text-white text-[13px] font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+                    >
+                      <MessageSquare className="size-4" />
+                      <span>Send to {targetName} on WhatsApp</span>
+                    </a>
+                  ) : null;
+                })()}
+
+                <div className="pt-3 border-t border-[#EDE8E0] flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setCreateUploadReqModalOpen(false)}
+                    className="px-6 py-2 rounded-full border border-[#EDE8E0] text-[13px] font-semibold text-[#172124] hover:bg-[#FAF7F2] cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleGenerateUploadLink} className="flex flex-col flex-1 overflow-y-auto">
+                <div className="p-7 flex flex-col gap-4">
+                  <div>
+                    <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
+                      Select Client Party *
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {(["buyer", "seller"] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => {
+                            setReqParty(p);
+                            setReqSelectedDocs(p === "buyer" ? ["Aadhaar Card", "PAN Card"] : ["Aadhaar Card", "PAN Card", "Sale Deed", "7/12 Extract"]);
+                          }}
+                          className={`p-3 rounded-[12px] border text-[13px] font-semibold capitalize cursor-pointer transition-all ${
+                            reqParty === p
+                              ? "bg-[#172124] text-white border-[#172124] shadow-xs"
+                              : "bg-[#FAF7F2] text-[#717A7D] border-[#EDE8E0] hover:bg-white"
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
+                      Requested Documents *
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        "Aadhaar Card",
+                        "PAN Card",
+                        "Passport (NRI)",
+                        "Sale Deed",
+                        "7/12 Extract",
+                        "Nil Encumbrance Certificate",
+                        "Electricity / Municipality Bill",
+                        "Bank Account Proof",
+                      ].map((docName) => {
+                        const isChecked = reqSelectedDocs.includes(docName);
+                        return (
+                          <label
+                            key={docName}
+                            className={`p-2.5 rounded-[10px] border text-[12.5px] flex items-center gap-2 cursor-pointer transition-all ${
+                              isChecked
+                                ? "bg-white border-[#172124] text-[#172124] font-semibold shadow-2xs"
+                                : "bg-[#FAF7F2] border-[#EDE8E0] text-[#717A7D]"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setReqSelectedDocs([...reqSelectedDocs, docName]);
+                                } else {
+                                  setReqSelectedDocs(reqSelectedDocs.filter((d) => d !== docName));
+                                }
+                              }}
+                              className="size-3.5 rounded accent-[#172124]"
+                            />
+                            <span className="truncate">{docName}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
+                        Link Validity
+                      </label>
+                      <select
+                        value={reqValidDays}
+                        onChange={(e) => setReqValidDays(Number(e.target.value))}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                      >
+                        <option value={3}>3 Days</option>
+                        <option value={7}>7 Days (Standard)</option>
+                        <option value={14}>14 Days</option>
+                        <option value={30}>30 Days</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11.5px] font-semibold text-[#8B7D68] uppercase tracking-wider mb-1.5">
+                        Optional Note to Client
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Please upload clear color scans"
+                        value={reqMessage}
+                        onChange={(e) => setReqMessage(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-[12px] border border-[#EDE8E0] bg-[#FAF7F2] text-[13px] text-[#172124] focus:outline-none focus:border-[#172124] focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-7 py-4.5 bg-[#FAF7F2] border-t border-[#EDE8E0] flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCreateUploadReqModalOpen(false)}
+                    className="px-5 py-2 rounded-full border border-[#EDE8E0] text-[13px] font-semibold text-[#172124] hover:bg-white cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={generatingLink || reqSelectedDocs.length === 0}
+                    className="px-6 py-2 rounded-full text-white text-[13px] font-semibold shadow-xs hover:bg-[#2C383C] disabled:opacity-50 cursor-pointer bg-[#172124] flex items-center gap-2"
+                  >
+                    <Link2 className="size-3.5 text-[#C9AD86]" />
+                    <span>{generatingLink ? "Generating..." : "Generate Secure Link"}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: PREPARE PRINT PACK (PHASE D3) ─────────────────────────── */}
+      {printPackModalOpen && selectedDealDetail && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5">
+          <div className="bg-white rounded-[24px] max-w-[960px] w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#EDE8E0]">
+            {/* Header */}
+            <div className="px-6 sm:px-8 py-5 border-b border-[#EDE8E0] flex items-center justify-between bg-[#FAF7F2]">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-[14px] bg-[#172124] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Printer className="size-5 text-[#C9AD86]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#8B7D68]">
+                      [ Document Preparation ]
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-[#172124]/5 text-[#172124] border border-[#EDE8E0]">
+                      {selectedDealDetail.deal_number}
+                    </span>
+                  </div>
+                  <h3 className="font-display font-bold text-[18px] text-[#172124]">
+                    Prepare Print Pack
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintPackModalOpen(false);
+                  if (printPackGeneratedBlobUrl) {
+                    URL.revokeObjectURL(printPackGeneratedBlobUrl);
+                    setPrintPackGeneratedBlobUrl(null);
+                  }
+                }}
+                className="size-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer"
+              >
+                <X className="size-4.5" />
+              </button>
+            </div>
+
+            {/* Body: Two columns */}
+            <div className="flex-1 overflow-y-auto p-6 sm:p-7 flex flex-col lg:flex-row gap-6">
+              {/* Left Column: Categorized Document Selection */}
+              <div className="flex-1 flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#EDE8E0]">
+                  <div className="text-[13px] font-semibold text-[#172124]">
+                    Select Documents ({printPackSelectedDocIds.length} of {(selectedDealDetail.documents || []).length} selected)
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllDocs}
+                      className="px-2.5 py-1 rounded-md text-[11.5px] font-semibold text-[#172124] hover:bg-[#FAF7F2] border border-[#EDE8E0] cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllVerifiedDocs}
+                      className="px-2.5 py-1 rounded-md text-[11.5px] font-semibold text-[#17805B] hover:bg-emerald-50 border border-emerald-200 cursor-pointer"
+                    >
+                      Select Verified
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearDocSelection}
+                      className="px-2.5 py-1 rounded-md text-[11.5px] font-semibold text-[#717A7D] hover:bg-gray-100 border border-[#EDE8E0] cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                {/* Categorized Document List */}
+                {(selectedDealDetail.documents || []).length === 0 ? (
+                  <div className="p-8 text-center bg-[#FAF7F2] rounded-[16px] border border-dashed border-[#EDE8E0]">
+                    <FolderKey className="size-8 text-[#8B7D68] mx-auto mb-2 opacity-50" />
+                    <p className="text-[13px] font-semibold text-[#172124]">No documents in this Deal Vault</p>
+                    <p className="text-[12px] text-[#717A7D] mt-1">Upload documents to this deal or request client submissions first.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {[
+                      { key: "buyer", label: "Buyer Documents & Proofs" },
+                      { key: "seller", label: "Seller Documents & KYC" },
+                      { key: "property", label: "Property Title & Records" },
+                      { key: "legal", label: "Legal & Contracts" },
+                      { key: "financial", label: "Financial & Tax Proofs" },
+                      { key: "other", label: "Other Documents" },
+                    ].map((group) => {
+                      const groupDocs = (selectedDealDetail.documents || []).filter(
+                        (d) => (d.category || "").toLowerCase() === group.key
+                      );
+                      if (groupDocs.length === 0) return null;
+
+                      return (
+                        <div key={group.key} className="flex flex-col gap-2">
+                          <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#8B7D68] flex items-center gap-1.5">
+                            <span>{group.label}</span>
+                            <span className="text-[10px] text-[#717A7D]">({groupDocs.length})</span>
+                          </div>
+
+                          <div className="flex flex-col gap-1.5">
+                            {groupDocs.map((doc) => {
+                              const isSelected = printPackSelectedDocIds.includes(doc.id);
+                              const isFront = (doc.document_side || "").toLowerCase() === "front" || doc.title.toLowerCase().includes("front");
+                              const isBack = (doc.document_side || "").toLowerCase() === "back" || doc.title.toLowerCase().includes("back");
+                              
+                              const baseTitle = doc.title.replace(/\s*[[(-]?(?:front|back)[)\]-]?\s*$/i, "").trim().toLowerCase();
+                              const isPairedWithOther = (isFront || isBack) && (selectedDealDetail.documents || []).some((other) => {
+                                if (other.id === doc.id || !printPackSelectedDocIds.includes(other.id)) return false;
+                                const otherBase = other.title.replace(/\s*[[(-]?(?:front|back)[)\]-]?\s*$/i, "").trim().toLowerCase();
+                                const otherIsOpposite = isFront ? ((other.document_side || "").toLowerCase() === "back" || other.title.toLowerCase().includes("back")) : ((other.document_side || "").toLowerCase() === "front" || other.title.toLowerCase().includes("front"));
+                                return otherBase === baseTitle && otherIsOpposite && (other.party || "").toLowerCase() === (doc.party || "").toLowerCase();
+                              });
+
+                              return (
+                                <label
+                                  key={doc.id}
+                                  className={`p-3 rounded-[14px] border text-[13px] flex items-start gap-3 cursor-pointer transition-all ${
+                                    isSelected
+                                      ? "bg-white border-[#172124] shadow-xs ring-1 ring-[#172124]/10"
+                                      : "bg-[#FAF7F2] border-[#EDE8E0] text-[#717A7D] hover:bg-white"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => handleToggleDocSelection(doc.id)}
+                                    className="size-4 mt-0.5 rounded accent-[#172124] cursor-pointer shrink-0"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`font-semibold ${isSelected ? "text-[#172124]" : "text-[#717A7D]"}`}>
+                                        {doc.title}
+                                      </span>
+                                      {doc.document_side && doc.document_side !== "complete" && (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                          {doc.document_side}
+                                        </span>
+                                      )}
+                                      {isPairedWithOther && isSelected && (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
+                                          <Layers className="size-3 text-purple-600" />
+                                          <span>Paired on 1 Page</span>
+                                        </span>
+                                      )}
+                                      {doc.is_verified ? (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-[#17805B] border border-emerald-200 flex items-center gap-1">
+                                          <Check className="size-2.5 text-[#17805B]" />
+                                          <span>Verified</span>
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                          Pending
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11.5px] text-[#717A7D] mt-0.5 flex items-center gap-2">
+                                      <span className="truncate">{doc.original_filename}</span>
+                                      <span>•</span>
+                                      <span>{(doc.file_size / 1024).toFixed(0)} KB</span>
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Print Pack Preview, Ordering & Actions */}
+              <div className="w-full lg:w-[360px] flex flex-col gap-5 border-t lg:border-t-0 lg:border-l border-[#EDE8E0] pt-5 lg:pt-0 lg:pl-6">
+                {/* Cover Page Setting */}
+                <div className="p-4 rounded-[16px] bg-[#FAF7F2] border border-[#EDE8E0] flex flex-col gap-2">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={printPackIncludeCover}
+                      onChange={(e) => {
+                        setPrintPackIncludeCover(e.target.checked);
+                        setPrintPackGeneratedBlob(null);
+                      }}
+                      className="size-4 mt-0.5 rounded accent-[#172124] cursor-pointer"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-[13px] text-[#172124]">
+                        Include Deal Cover Page
+                      </span>
+                      <span className="text-[11.5px] text-[#717A7D] mt-0.5">
+                        Adds an executive A4 cover sheet with deal reference, property, parties, and document index.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Selected Order & Summary */}
+                <div className="flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-mono uppercase font-bold text-[#8B7D68] flex items-center gap-1.5">
+                      <span>Print Order ({printPackSelectedDocIds.length} Items)</span>
+                      {printPackPreview && printPackPreview.paired_documents_count > 0 && (
+                        <span className="text-[10px] text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200 font-sans normal-case">
+                          {printPackPreview.paired_documents_count / 2} paired
+                        </span>
+                      )}
+                    </span>
+                    {printPackLoadingPreview ? (
+                      <span className="text-[11px] text-[#717A7D] animate-pulse">Estimating pages...</span>
+                    ) : printPackPageCount !== null && (
+                      <span className="text-[11px] font-semibold text-[#17805B] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Est. {printPackPageCount} Pages
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="max-h-[220px] overflow-y-auto flex flex-col gap-1.5 p-1">
+                    {printPackSelectedDocIds.map((docId, idx) => {
+                      const doc = (selectedDealDetail.documents || []).find((d) => d.id === docId);
+                      if (!doc) return null;
+
+                      return (
+                        <div
+                          key={docId}
+                          className="p-2.5 rounded-[12px] bg-white border border-[#EDE8E0] flex items-center justify-between gap-2 text-[12px] shadow-2xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="size-5 rounded-full bg-[#FAF7F2] text-[#717A7D] font-mono text-[10px] font-bold flex items-center justify-center shrink-0 border border-[#EDE8E0]">
+                              {idx + 1}
+                            </span>
+                            <span className="font-medium text-[#172124] truncate">
+                              {doc.title}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => handleMoveSelectedDoc(idx, "up")}
+                              className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 cursor-pointer"
+                              title="Move Up"
+                            >
+                              <ArrowUp className="size-3.5 text-[#717A7D]" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === printPackSelectedDocIds.length - 1}
+                              onClick={() => handleMoveSelectedDoc(idx, "down")}
+                              className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 cursor-pointer"
+                              title="Move Down"
+                            >
+                              <ArrowDown className="size-3.5 text-[#717A7D]" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleDocSelection(docId)}
+                              className="p-1 rounded hover:bg-red-50 text-red-500 cursor-pointer"
+                              title="Remove"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Error Banner */}
+                {printPackError && (
+                  <div className="p-3.5 rounded-[12px] bg-red-50 border border-red-200 text-red-700 text-[12.5px] flex items-start gap-2">
+                    <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                    <span>{printPackError}</span>
+                  </div>
+                )}
+
+                {/* Generated Result Banner */}
+                {printPackGeneratedBlob && (
+                  <div className="p-4 rounded-[16px] bg-emerald-50 border border-emerald-200 flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="size-5 text-[#17805B] shrink-0" />
+                      <span className="font-bold text-[13.5px] text-emerald-900">
+                        Print Pack Ready!
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-emerald-800">
+                      A4 document assembled cleanly with high-resolution image rendering and native PDF pages.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleDownloadGeneratedPack}
+                        className="py-2.5 px-3 rounded-full bg-[#172124] text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-[#2C383C] shadow-xs"
+                      >
+                        <Download className="size-3.5 text-[#C9AD86]" />
+                        <span>Download PDF</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePrintGeneratedPack}
+                        className="py-2.5 px-3 rounded-full bg-[#17805B] text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-[#136648] shadow-xs"
+                      >
+                        <Printer className="size-3.5" />
+                        <span>Print Now</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Primary Action Button */}
+                {!printPackGeneratedBlob && (
+                  <button
+                    type="button"
+                    disabled={printPackGenerating || printPackSelectedDocIds.length === 0}
+                    onClick={handleGeneratePrintPack}
+                    className="w-full py-3 rounded-full text-white text-[13.5px] font-semibold shadow-xs hover:bg-[#2C383C] disabled:opacity-50 cursor-pointer bg-[#172124] flex items-center justify-center gap-2 transition-all mt-auto"
+                  >
+                    {printPackGenerating ? (
+                      <>
+                        <RefreshCw className="size-4 text-[#C9AD86] animate-spin" />
+                        <span>Assembling A4 Print Pack...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Printer className="size-4 text-[#C9AD86]" />
+                        <span>Generate Print Pack ({printPackSelectedDocIds.length})</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

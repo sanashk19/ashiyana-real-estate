@@ -161,10 +161,10 @@ function Hero() {
                 <div className="max-w-[1400px] mx-auto px-6">
                     <div className="flex flex-wrap items-center divide-x bg-white/95 backdrop-blur-md rounded-t-[20px] overflow-hidden shadow-[0_-4px_32px_rgba(0,0,0,0.12)]" style={{ borderColor: `${BG}10` }}>
                         {[
-                            { value: "50+", label: "Premium Listings" },
+                            { value: "Curated", label: "Premium Properties" },
                             { value: "25+", label: "Goa Localities" },
-                            { value: "100%", label: "Verified Properties" },
-                            { value: "NRI", label: "Friendly Investments" },
+                            { value: "100%", label: "Verified Listings" },
+                            { value: "NRI", label: "Friendly Guidance" },
                         ].map(({ value, label }) => (
                             <div key={label} className="flex-1 min-w-[140px] flex flex-col items-center justify-center py-[20px] px-[16px] gap-[2px]" style={{ borderColor: `${BG}10` }}>
                                 <p className="font-bold text-[28px] leading-[1.1]" style={{ color: GREEN }}>{value}</p>
@@ -290,7 +290,7 @@ function LocalityCard({ loc, delay = 0 }: { loc: Locality; delay?: number }) {
 
                     <div className="absolute bottom-[14px] left-[14px]">
                         <span className="px-[10px] py-[5px] rounded-full font-semibold text-[12px] text-white bg-black/40 backdrop-blur-sm">
-                            {loc.listings} Properties Listed
+                            Prime Locality
                         </span>
                     </div>
 

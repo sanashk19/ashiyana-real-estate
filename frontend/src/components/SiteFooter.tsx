@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link } from "react-router";
 import { AshiyanaLogo } from "@/lib/shared";
 import { useBusinessProfile } from "@/context/BusinessProfileContext";
+import { BUSINESS_CONTACT } from "@/lib/constants";
 import { CheckCircle2, Phone, Mail, MapPin } from "lucide-react";
 
 export function SiteFooter() {
@@ -17,7 +18,7 @@ export function SiteFooter() {
     setTimeout(() => setSubscribed(false), 5000);
   };
 
-  const phoneTel = `tel:${(profile?.phone || "+91 832 246 7890").replace(/\s+/g, "")}`;
+  const phoneTel = `tel:${(profile?.phone || BUSINESS_CONTACT.phone).replace(/\s+/g, "")}`;
 
   return (
     <footer className="w-full bg-[#172124] text-white pt-16 pb-12 font-sans border-t border-white/5">
@@ -42,13 +43,13 @@ export function SiteFooter() {
             <div className="flex items-center lg:justify-end gap-2">
               <Phone className="size-4 text-[#17805B] shrink-0" />
               <a href={phoneTel} className="hover:text-white transition-colors">
-                {profile?.phone || "+91 832 246 7890"}
+                {profile?.phone || BUSINESS_CONTACT.phoneDisplay}
               </a>
             </div>
             <div className="flex items-center lg:justify-end gap-2">
               <Mail className="size-4 text-[#A6B0B3] shrink-0" />
-              <a href={`mailto:${profile?.email || "ashiyanarentbuysell@gmail.com"}`} className="hover:text-white transition-colors">
-                {profile?.email || "ashiyanarentbuysell@gmail.com"}
+              <a href={`mailto:${profile?.email || BUSINESS_CONTACT.email}`} className="hover:text-white transition-colors">
+                {profile?.email || BUSINESS_CONTACT.email}
               </a>
             </div>
           </div>
